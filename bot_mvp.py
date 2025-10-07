@@ -4,165 +4,164 @@ from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
+from aiogram.types import KeyboardButton, ReplyKeyboardMarkup, FSInputFile
 from datetime import datetime
-import asyncpg
-import matplotlib.pyplot as plt
 from io import BytesIO
-
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import asyncpg
 # ======== ТВОЙ ТОКЕН ========
 API_TOKEN = "8442431194:AAHqrL5Uv-boQHXf_68f6or3i1pZmJDMqy0"
 
 # ======== ССЫЛКА НА БАЗУ NEON ========
 DB_URL = "postgresql://neondb_owner:npg_0eRPsTi9tJAj@ep-winter-snow-ab9o1qut-pooler.eu-west-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
 
-# ======== FSM состояния ========
-class AddApproach(StatesGroup):
-    waiting_exercise = State()
-    waiting_sets = State()
-    waiting_reps = State()
-    waiting_weights = State()
+storage = MemoryStorage()
+bot = Bot(token=API_TOKEN)
+dp = Dispatcher(storage=storage)
+pool: asyncpg.pool.Pool = None
 
-# ======== Создание клавиатуры ========
+# ===== FSM =====
+class AddApproachStates(StatesGroup):
+    waiting_for_exercise = State()
+    waiting_for_new_exercise = State()
+    waiting_for_sets = State()
+    waiting_for_reps = State()
+    waiting_for_weights = State()
+
+# ===== Главное меню =====
 def main_kb():
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="➕ Добавить подход")],
-            [KeyboardButton(text="📜 История"), KeyboardButton(text="📈 Прогресс")],
+            [KeyboardButton("📜 История"), KeyboardButton("📈 Прогресс"), KeyboardButton("📊 Статистика")],
+            [KeyboardButton("➕ Добавить подход"), KeyboardButton("⏮ Использовать прошлую тренировку")],
+            [KeyboardButton("🔍 Найти упражнение"), KeyboardButton("❌ Удалить упражнение")],
+            [KeyboardButton("⏰ Напоминания"), KeyboardButton("🔄 Рестарт бота")]
         ],
         resize_keyboard=True
     )
 
-# ======== Подключение к БД ========
+# ===== Подключение к БД =====
 async def create_pool():
-    pool = await asyncpg.create_pool(DB_URL)
-    async with pool.acquire() as conn:
-        await conn.execute("""
-        CREATE TABLE IF NOT EXISTS workouts (
-            id SERIAL PRIMARY KEY,
-            user_id BIGINT,
-            exercise TEXT,
-            sets INT,
-            reps TEXT,
-            weights TEXT,
-            date TIMESTAMP DEFAULT NOW()
-        );
-        """)
-    return pool
+    global pool
+    pool = await asyncpg.create_pool(DATABASE_URL)
 
-# ======== Инициализация ========
-storage = MemoryStorage()
-bot = Bot(token=API_TOKEN)
-dp = Dispatcher(storage=storage)
-pool = None
-
-# ======== START ========
-@dp.message(CommandStart())
-async def start(message: types.Message, state: FSMContext):
-    await state.clear()
-    await message.answer("👋 Привет! Я бот для учёта тренировок.\n\nВыберите действие:", reply_markup=main_kb())
-
-# ======== ДОБАВИТЬ ПОДХОД ========
-@dp.message(F.text == "➕ Добавить подход")
-async def add_start(message: types.Message, state: FSMContext):
-    await message.answer("Введите название упражнения:")
-    await state.set_state(AddApproach.waiting_exercise)
-
-@dp.message(AddApproach.waiting_exercise)
-async def get_exercise(message: types.Message, state: FSMContext):
-    await state.update_data(exercise=message.text.strip())
-    await message.answer("Сколько подходов?")
-    await state.set_state(AddApproach.waiting_sets)
-
-@dp.message(AddApproach.waiting_sets)
-async def get_sets(message: types.Message, state: FSMContext):
-    if not message.text.isdigit():
-        await message.answer("Введите число!")
-        return
-    await state.update_data(sets=int(message.text))
-    await message.answer("Введите количество повторений через пробел (например: 12 10 8):")
-    await state.set_state(AddApproach.waiting_reps)
-
-@dp.message(AddApproach.waiting_reps)
-async def get_reps(message: types.Message, state: FSMContext):
-    await state.update_data(reps=message.text.strip())
-    await message.answer("Введите веса через пробел (например: 60 70 80):")
-    await state.set_state(AddApproach.waiting_weights)
-
-@dp.message(AddApproach.waiting_weights)
-async def get_weights(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    exercise = data['exercise']
-    sets = data['sets']
-    reps = data['reps']
-    weights = message.text.strip()
-
-    async with pool.acquire() as conn:
-        await conn.execute("""
-            INSERT INTO workouts (user_id, exercise, sets, reps, weights)
-            VALUES ($1, $2, $3, $4, $5)
-        """, message.from_user.id, exercise, sets, reps, weights)
-
-    await message.answer(f"✅ Упражнение '{exercise}' сохранено!\n\nВыберите действие:", reply_markup=main_kb())
-    await state.clear()
-
-# ======== ИСТОРИЯ ========
-@dp.message(F.text == "📜 История")
-async def history(message: types.Message):
-    async with pool.acquire() as conn:
-        rows = await conn.fetch("""
-            SELECT * FROM workouts WHERE user_id = $1 ORDER BY date DESC LIMIT 10
-        """, message.from_user.id)
-    if not rows:
-        await message.answer("❌ У вас пока нет записей.")
-        return
-
-    text = "📜 Последние тренировки:\n\n"
-    for r in rows:
-        text += f"🏋️ {r['exercise']} — {r['sets']} подходов\nПовторения: {r['reps']}\nВес: {r['weights']}\n📅 {r['date'].strftime('%d.%m.%Y %H:%M')}\n\n"
-    await message.answer(text)
-
-# ======== ПРОГРЕСС ========
-@dp.message(F.text == "📈 Прогресс")
-async def progress(message: types.Message):
+async def add_user(user_id: int, username: str):
     try:
         async with pool.acquire() as conn:
-            rows = await conn.fetch("""
-                SELECT exercise, SUM((string_to_array(weights, ' '))[1]::int) AS total_weight
-                FROM workouts
-                WHERE user_id = $1
-                GROUP BY exercise
-            """, message.from_user.id)
-
-        if not rows:
-            await message.answer("📊 Недостаточно данных для графика.")
-            return
-
-        exercises = [r['exercise'] for r in rows]
-        totals = [r['total_weight'] for r in rows]
-
-        plt.figure(figsize=(6, 4))
-        plt.bar(exercises, totals)
-        plt.title("Прогресс по упражнениям")
-        plt.xlabel("Упражнение")
-        plt.ylabel("Сумма весов (кг)")
-        plt.xticks(rotation=45)
-        plt.tight_layout()
-
-        buf = BytesIO()
-        plt.savefig(buf, format='png')
-        buf.seek(0)
-        plt.close()
-
-        await bot.send_photo(chat_id=message.chat.id, photo=buf, caption="📈 Ваш прогресс по упражнениям")
+            await conn.execute(
+                "INSERT INTO users(id, username) VALUES($1, $2) ON CONFLICT (id) DO NOTHING",
+                user_id, username
+            )
     except Exception as e:
-        await message.answer(f"❗️ Не удалось отправить график: {e}")
+        print(f"DB error add_user: {e}")
 
-# ======== ЗАПУСК ========
+async def get_exercises(user_id: int):
+    try:
+        async with pool.acquire() as conn:
+            rows = await conn.fetch("SELECT name FROM exercises WHERE user_id=$1", user_id)
+            return [r['name'] for r in rows]
+    except Exception as e:
+        print(f"DB error get_exercises: {e}")
+        return []
+
+async def add_exercise(user_id: int, name: str):
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO exercises(user_id, name) VALUES($1, $2)",
+                user_id, name
+            )
+    except Exception as e:
+        print(f"DB error add_exercise: {e}")
+
+# ===== Старт =====
+@dp.message(CommandStart())
+async def start(message: types.Message, state: FSMContext = None):
+    await add_user(message.from_user.id, message.from_user.username)
+    if state:
+        await state.clear()
+    await message.answer("Привет! Выберите действие:", reply_markup=main_kb())
+
+# ===== Добавление подхода =====
+@dp.message(F.text == "➕ Добавить подход")
+async def start_add_approach(message: types.Message, state: FSMContext):
+    await state.clear()
+    user_exercises = await get_exercises(message.from_user.id)
+    kb_buttons = [[KeyboardButton(text=ex)] for ex in user_exercises] + [
+        [KeyboardButton("➕ Добавить новое упражнение")],
+        [KeyboardButton("↩ В меню")]
+    ]
+    kb = ReplyKeyboardMarkup(keyboard=kb_buttons, resize_keyboard=True, one_time_keyboard=True)
+    await message.answer("Выберите упражнение или добавьте новое:", reply_markup=kb)
+    await state.set_state(AddApproachStates.waiting_for_exercise)
+
+@dp.message(AddApproachStates.waiting_for_exercise)
+async def process_exercise(message: types.Message, state: FSMContext):
+    text = message.text.strip()
+    if text == "↩ В меню":
+        await start(message, state)
+        return
+    if text == "➕ Добавить новое упражнение":
+        await message.answer("Введите название нового упражнения:")
+        await state.set_state(AddApproachStates.waiting_for_new_exercise)
+        return
+    user_exercises = await get_exercises(message.from_user.id)
+    if text not in user_exercises:
+        await message.answer("❗ Выберите упражнение из списка или добавьте новое.")
+        return
+    await state.update_data(exercise=text)
+    await message.answer("Сколько подходов?")
+    await state.set_state(AddApproachStates.waiting_for_sets)
+
+@dp.message(AddApproachStates.waiting_for_new_exercise)
+async def add_new_exercise(message: types.Message, state: FSMContext):
+    text = message.text.strip()
+    await add_exercise(message.from_user.id, text)
+    await state.update_data(exercise=text)
+    await message.answer(f"✅ Упражнение '{text}' добавлено!\nСколько подходов?")
+    await state.set_state(AddApproachStates.waiting_for_sets)
+
+# ===== Прогресс =====
+@dp.message(F.text == "📈 Прогресс")
+async def progress(message: types.Message):
+    # Пример данных
+    user_data = [
+        {"date": datetime(2025, 10, 1), "score": 5},
+        {"date": datetime(2025, 10, 2), "score": 7},
+        {"date": datetime(2025, 10, 3), "score": 6},
+    ]
+    dates = [d['date'].strftime("%d.%m") for d in user_data]
+    scores = [d['score'] for d in user_data]
+
+    # Рисуем график
+    plt.figure(figsize=(6, 4))
+    plt.plot(dates, scores, marker='o')
+    plt.title("Прогресс")
+    plt.xlabel("Дата")
+    plt.ylabel("Баллы")
+    plt.grid(True)
+
+    buf = BytesIO()
+    plt.savefig(buf, format='png')
+    buf.seek(0)
+    plt.close()
+
+    photo = FSInputFile(buf, filename="progress.png")
+
+    # Попытка отправки фото 3 раза
+    for _ in range(3):
+        try:
+            await bot.send_photo(chat_id=message.chat.id, photo=photo, caption="📈 Ваш прогресс")
+            break
+        except Exception as e:
+            await asyncio.sleep(1)
+            print(f"Ошибка отправки фото: {e}")
+
+# ===== Запуск бота =====
 async def main():
-    global pool
-    pool = await create_pool()
-    print("✅ Бот запущен и подключён к базе данных Neon")
+    await create_pool()
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
