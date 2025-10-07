@@ -152,6 +152,8 @@ async def progress(message, bot: Bot):
         photo = FSInputFile(buf, filename="progress.png")
 
         # Отправляем с таймаутом и обработкой ошибок
+        await asyncio.sleep(1)
+        await bot.send_photo(chat_id=message.chat.id, photo=photo, caption="📈 Ваш прогресс по упражнениям")
         await bot.send_photo(
             chat_id=message.chat.id,
             photo=photo,
