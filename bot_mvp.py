@@ -29,16 +29,28 @@ class AddApproachStates(StatesGroup):
     waiting_for_weights = State()
 
 # ===== Главное меню =====
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+
 def main_kb():
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton("📜 История"), KeyboardButton("📈 Прогресс"), KeyboardButton("📊 Статистика")],
-            [KeyboardButton("➕ Добавить подход"), KeyboardButton("⏮ Использовать прошлую тренировку")],
-            [KeyboardButton("🔍 Найти упражнение"), KeyboardButton("❌ Удалить упражнение")],
-            [KeyboardButton("⏰ Напоминания"), KeyboardButton("🔄 Рестарт бота")]
+            [
+                KeyboardButton(text="🏋️ Добавить упражнение"),
+                KeyboardButton(text="📋 Мои упражнения")
+            ],
+            [
+                KeyboardButton(text="📜 История"),
+                KeyboardButton(text="📈 Прогресс"),
+                KeyboardButton(text="📊 Статистика")
+            ],
+            [
+                KeyboardButton(text="⏰ Напоминание"),
+                KeyboardButton(text="⚙️ Настройки")
+            ]
         ],
         resize_keyboard=True
     )
+
 
 # ===== Подключение к БД =====
 async def create_pool():
