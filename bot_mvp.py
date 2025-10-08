@@ -13,7 +13,8 @@ import matplotlib.pyplot as plt
 import asyncpg
 
 API_TOKEN = "8442431194:AAHqrL5Uv-boQHXf_68f6or3i1pZmJDMqy0"
-DATABASE_URL = psql 'postgresql://neondb_owner:npg_0eRPsTi9tJAj@ep-winter-snow-ab9o1qut-pooler.eu-west-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require'
+DATABASE_URL = DATABASE_URL = "postgresql://neondb_owner:npg_0eRPsTi9tJAj@ep-winter-snow-ab9o1qut-pooler.eu-west-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+
 
 storage = MemoryStorage()
 bot = Bot(token=API_TOKEN)
