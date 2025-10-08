@@ -1,179 +1,78 @@
 import asyncio
-from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import CommandStart
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import KeyboardButton, ReplyKeyboardMarkup, FSInputFile
-from datetime import datetime
-from io import BytesIO
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
+from aiogram import Bot, Dispatcher, types
+from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
+from aiogram.filters import Command
 import asyncpg
+import os
 
-API_TOKEN = "8442431194:AAHqrL5Uv-boQHXf_68f6or3i1pZmJDMqy0"
-DATABASE_URL = DATABASE_URL = "postgresql://neondb_owner:npg_0eRPsTi9tJAj@ep-winter-snow-ab9o1qut-pooler.eu-west-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+# ================== Настройки ==================
+BOT_TOKEN = os.getenv("8442431194:AAHqrL5Uv-boQHXf_68f6or3i1pZmJDMqy0")  # Telegram Bot Token
+DATABASE_URL = os.getenv(
+    "'postgresql://neondb_owner:npg_0eRPsTi9tJAj@ep-winter-snow-ab9o1qut-pooler.eu-west-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require'"
+)  # Neon DB: postgresql://user:pass@host/db?sslmode=require
 
+# ================== База данных ==================
+async def create_db_pool():
+    return await asyncpg.create_pool(DATABASE_URL)
 
-storage = MemoryStorage()
-bot = Bot(token=API_TOKEN)
-dp = Dispatcher(storage=storage)
-pool: asyncpg.pool.Pool = None
+async def create_tables(pool):
+    async with pool.acquire() as conn:
+        await conn.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            user_id BIGINT PRIMARY KEY,
+            username TEXT
+        )
+        """)
+        await conn.execute("""
+        CREATE TABLE IF NOT EXISTS exercises (
+            id SERIAL PRIMARY KEY,
+            user_id BIGINT REFERENCES users(user_id) ON DELETE CASCADE,
+            name TEXT,
+            sets INT,
+            reps INT
+        )
+        """)
 
-# ===== FSM =====
-class AddApproachStates(StatesGroup):
-    waiting_for_exercise = State()
-    waiting_for_new_exercise = State()
-    waiting_for_sets = State()
-    waiting_for_reps = State()
-    waiting_for_weights = State()
+async def add_user(pool, user_id: int, username: str):
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO users (user_id, username) VALUES ($1, $2) ON CONFLICT (user_id) DO NOTHING",
+            user_id, username
+        )
 
-# ===== Главное меню =====
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
-
+# ================== Клавиатура ==================
 def main_kb():
-    return ReplyKeyboardMarkup(
+    kb = ReplyKeyboardMarkup(
         keyboard=[
-            [
-                KeyboardButton(text="🏋️ Добавить упражнение"),
-                KeyboardButton(text="📋 Мои упражнения")
-            ],
-            [
-                KeyboardButton(text="📜 История"),
-                KeyboardButton(text="📈 Прогресс"),
-                KeyboardButton(text="📊 Статистика")
-            ],
-            [
-                KeyboardButton(text="⏰ Напоминание"),
-                KeyboardButton(text="⚙️ Настройки")
-            ]
+            [KeyboardButton("📜 История"), KeyboardButton("📈 Прогресс"), KeyboardButton("📊 Статистика")],
+            [KeyboardButton("➕ Добавить упражнение")]
         ],
         resize_keyboard=True
     )
+    return kb
 
-
-# ===== Подключение к БД =====
-async def create_pool():
-    global pool
-    pool = await asyncpg.create_pool(DATABASE_URL)
-
-async def add_user(user_id: int, username: str):
-    try:
-        async with pool.acquire() as conn:
-            await conn.execute(
-                "INSERT INTO users(id, username) VALUES($1, $2) ON CONFLICT (id) DO NOTHING",
-                user_id, username
-            )
-    except Exception as e:
-        print(f"DB error add_user: {e}")
-
-async def get_exercises(user_id: int):
-    try:
-        async with pool.acquire() as conn:
-            rows = await conn.fetch("SELECT name FROM exercises WHERE user_id=$1", user_id)
-            return [r['name'] for r in rows]
-    except Exception as e:
-        print(f"DB error get_exercises: {e}")
-        return []
-
-async def add_exercise(user_id: int, name: str):
-    try:
-        async with pool.acquire() as conn:
-            await conn.execute(
-                "INSERT INTO exercises(user_id, name) VALUES($1, $2)",
-                user_id, name
-            )
-    except Exception as e:
-        print(f"DB error add_exercise: {e}")
-
-# ===== Старт =====
-@dp.message(CommandStart())
-async def start(message: types.Message, state: FSMContext = None):
-    await add_user(message.from_user.id, message.from_user.username)
-    if state:
-        await state.clear()
-    await message.answer("Привет! Выберите действие:", reply_markup=main_kb())
-
-# ===== Добавление подхода =====
-@dp.message(F.text == "➕ Добавить подход")
-async def start_add_approach(message: types.Message, state: FSMContext):
-    await state.clear()
-    user_exercises = await get_exercises(message.from_user.id)
-    kb_buttons = [[KeyboardButton(text=ex)] for ex in user_exercises] + [
-        [KeyboardButton("➕ Добавить новое упражнение")],
-        [KeyboardButton("↩ В меню")]
-    ]
-    kb = ReplyKeyboardMarkup(keyboard=kb_buttons, resize_keyboard=True, one_time_keyboard=True)
-    await message.answer("Выберите упражнение или добавьте новое:", reply_markup=kb)
-    await state.set_state(AddApproachStates.waiting_for_exercise)
-
-@dp.message(AddApproachStates.waiting_for_exercise)
-async def process_exercise(message: types.Message, state: FSMContext):
-    text = message.text.strip()
-    if text == "↩ В меню":
-        await start(message, state)
-        return
-    if text == "➕ Добавить новое упражнение":
-        await message.answer("Введите название нового упражнения:")
-        await state.set_state(AddApproachStates.waiting_for_new_exercise)
-        return
-    user_exercises = await get_exercises(message.from_user.id)
-    if text not in user_exercises:
-        await message.answer("❗ Выберите упражнение из списка или добавьте новое.")
-        return
-    await state.update_data(exercise=text)
-    await message.answer("Сколько подходов?")
-    await state.set_state(AddApproachStates.waiting_for_sets)
-
-@dp.message(AddApproachStates.waiting_for_new_exercise)
-async def add_new_exercise(message: types.Message, state: FSMContext):
-    text = message.text.strip()
-    await add_exercise(message.from_user.id, text)
-    await state.update_data(exercise=text)
-    await message.answer(f"✅ Упражнение '{text}' добавлено!\nСколько подходов?")
-    await state.set_state(AddApproachStates.waiting_for_sets)
-
-# ===== Прогресс =====
-@dp.message(F.text == "📈 Прогресс")
-async def progress(message: types.Message):
-    # Пример данных
-    user_data = [
-        {"date": datetime(2025, 10, 1), "score": 5},
-        {"date": datetime(2025, 10, 2), "score": 7},
-        {"date": datetime(2025, 10, 3), "score": 6},
-    ]
-    dates = [d['date'].strftime("%d.%m") for d in user_data]
-    scores = [d['score'] for d in user_data]
-
-    # Рисуем график
-    plt.figure(figsize=(6, 4))
-    plt.plot(dates, scores, marker='o')
-    plt.title("Прогресс")
-    plt.xlabel("Дата")
-    plt.ylabel("Баллы")
-    plt.grid(True)
-
-    buf = BytesIO()
-    plt.savefig(buf, format='png')
-    buf.seek(0)
-    plt.close()
-
-    photo = FSInputFile(buf, filename="progress.png")
-
-    # Попытка отправки фото 3 раза
-    for _ in range(3):
-        try:
-            await bot.send_photo(chat_id=message.chat.id, photo=photo, caption="📈 Ваш прогресс")
-            break
-        except Exception as e:
-            await asyncio.sleep(1)
-            print(f"Ошибка отправки фото: {e}")
-
-# ===== Запуск бота =====
+# ================== Бот ==================
 async def main():
-    await create_pool()
-    await dp.start_polling(bot)
+    bot = Bot(token=BOT_TOKEN)
+    dp = Dispatcher()
+
+    pool = await create_db_pool()
+    await create_tables(pool)
+
+    @dp.message(Command("start"))
+    async def start(message: types.Message):
+        await add_user(pool, message.from_user.id, message.from_user.username or "")
+        await message.answer(
+            "Привет! Бот для учёта тренировок.\n\nВыберите действие:",
+            reply_markup=main_kb()
+        )
+
+    print("Бот запущен...")
+    try:
+        await dp.start_polling(bot)
+    finally:
+        await bot.session.close()
+        await pool.close()
 
 if __name__ == "__main__":
     asyncio.run(main())
