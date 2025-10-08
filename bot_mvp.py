@@ -1,78 +1,58 @@
+import os
 import asyncio
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
-from aiogram.filters import Command
 import asyncpg
-import os
 
-# ================== Настройки ==================
-BOT_TOKEN = os.getenv("8442431194:AAHqrL5Uv-boQHXf_68f6or3i1pZmJDMqy0")  # Telegram Bot Token
-DATABASE_URL = os.getenv(
-    "'postgresql://neondb_owner:npg_0eRPsTi9tJAj@ep-winter-snow-ab9o1qut-pooler.eu-west-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require'"
-)  # Neon DB: postgresql://user:pass@host/db?sslmode=require
+# Загружаем переменные окружения
+BOT_TOKEN = os.environ.get("8442431194:AAHqrL5Uv-boQHXf_68f6or3i1pZmJDMqy0")
+DATABASE_URL = os.environ.get("'postgresql://neondb_owner:npg_0eRPsTi9tJAj@ep-winter-snow-ab9o1qut-pooler.eu-west-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require'")
 
-# ================== База данных ==================
-async def create_db_pool():
+# Инициализация бота и диспетчера
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher()
+
+# Подключение к базе данных
+async def get_db_pool():
     return await asyncpg.create_pool(DATABASE_URL)
 
-async def create_tables(pool):
-    async with pool.acquire() as conn:
-        await conn.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            user_id BIGINT PRIMARY KEY,
-            username TEXT
-        )
-        """)
-        await conn.execute("""
-        CREATE TABLE IF NOT EXISTS exercises (
-            id SERIAL PRIMARY KEY,
-            user_id BIGINT REFERENCES users(user_id) ON DELETE CASCADE,
-            name TEXT,
-            sets INT,
-            reps INT
-        )
-        """)
+db_pool = asyncio.run(get_db_pool())
 
-async def add_user(pool, user_id: int, username: str):
-    async with pool.acquire() as conn:
-        await conn.execute(
-            "INSERT INTO users (user_id, username) VALUES ($1, $2) ON CONFLICT (user_id) DO NOTHING",
-            user_id, username
-        )
-
-# ================== Клавиатура ==================
+# Клавиатура меню
 def main_kb():
     kb = ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton("📜 История"), KeyboardButton("📈 Прогресс"), KeyboardButton("📊 Статистика")],
-            [KeyboardButton("➕ Добавить упражнение")]
+            [KeyboardButton("📜 История"), KeyboardButton("📈 Прогресс")],
+            [KeyboardButton("📊 Статистика"), KeyboardButton("⚙️ Настройки")]
         ],
         resize_keyboard=True
     )
     return kb
 
-# ================== Бот ==================
-async def main():
-    bot = Bot(token=BOT_TOKEN)
-    dp = Dispatcher()
+# Создание таблицы users при старте
+async def create_tables():
+    async with db_pool.acquire() as conn:
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                user_id BIGINT PRIMARY KEY,
+                username TEXT
+            )
+        """)
 
-    pool = await create_db_pool()
-    await create_tables(pool)
-
-    @dp.message(Command("start"))
-    async def start(message: types.Message):
-        await add_user(pool, message.from_user.id, message.from_user.username or "")
-        await message.answer(
-            "Привет! Бот для учёта тренировок.\n\nВыберите действие:",
-            reply_markup=main_kb()
+# Команда /start
+@dp.message()
+async def start(message: types.Message):
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO users (user_id, username) VALUES ($1, $2) ON CONFLICT (user_id) DO NOTHING",
+            message.from_user.id, message.from_user.username
         )
+    await message.answer("Привет! Бот для учёта тренировок.\n\nВыберите действие:", reply_markup=main_kb())
 
-    print("Бот запущен...")
-    try:
-        await dp.start_polling(bot)
-    finally:
-        await bot.session.close()
-        await pool.close()
+# Запуск бота
+async def main():
+    await create_tables()
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
     asyncio.run(main())
