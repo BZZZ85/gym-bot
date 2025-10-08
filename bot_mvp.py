@@ -5,8 +5,8 @@ from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
 import asyncpg
 
 # Загружаем переменные окружения
-BOT_TOKEN = os.environ.get("8442431194:AAHqrL5Uv-boQHXf_68f6or3i1pZmJDMqy0")
-DATABASE_URL = os.environ.get("'postgresql://neondb_owner:npg_0eRPsTi9tJAj@ep-winter-snow-ab9o1qut-pooler.eu-west-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require'")
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
 # Инициализация бота и диспетчера
 bot = Bot(token=BOT_TOKEN)
