@@ -32,19 +32,19 @@ async def close_pool():
 
 
 
-# ===== Пользователи =====
-import asyncpg
+# ===== Пользователи ====
+async def add_user(user_id, username):
+    conn = await asyncpg.connect(
+        "postgresql://neondb_owner:npg_0eRPsTi9tJAj@ep-winter-snow-ab9o1qut-pooler.eu-west-2.aws.neon.tech/neondb"
+    )
+    await conn.execute(
+        "INSERT INTO users (user_id, username) VALUES ($1, $2)",
+        user_id, username
+    )
+    await conn.close()
 
-async def add_user(pool, user_id, username):
-    try:
-        async with pool.acquire() as conn:
-            await conn.execute("""
-                INSERT INTO users (user_id, username)
-                VALUES ($1, $2)
-                ON CONFLICT (user_id) DO NOTHING;
-            """, user_id, username)
-    except Exception as e:
-        print(f"DB error add_user: {e}")
+# Пример вызова
+asyncio.run(add_user(123456789, "test_user"))
 
 
 # ===== Упражнения =====
