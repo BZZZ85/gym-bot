@@ -48,6 +48,19 @@ async def init_db():
             )
         """)
 
+        # Таблица упражнений
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS exercises (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT REFERENCES users(user_id) ON DELETE CASCADE,
+                exercise TEXT,
+                approach INT,
+                reps TEXT,
+                weight TEXT,
+                created_at TIMESTAMP DEFAULT now()
+            )
+        """)
+
         # Таблица упражнений (без колонок, которые могут добавляться позже)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS exercises (
@@ -75,7 +88,7 @@ async def init_db():
             await conn.execute("ALTER TABLE exercises ADD COLUMN created_at TIMESTAMP DEFAULT now();")
     ALTER TABLE exercises RENAME COLUMN name TO exercise;
 
-        # Таблица записей тренировок
+          # Таблица записей тренировок
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS records (
                 id SERIAL PRIMARY KEY,
