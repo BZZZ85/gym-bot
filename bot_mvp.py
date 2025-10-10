@@ -83,7 +83,7 @@ async def init_db():
                 date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-await conn.execute("ALTER TABLE records ADD COLUMN IF NOT EXISTS weight TEXT;")
+        await conn.execute("ALTER TABLE records ADD COLUMN IF NOT EXISTS weight TEXT;")
 
 
 # ===== Функция вставки упражнения в БД с весом =====
