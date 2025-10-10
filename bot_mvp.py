@@ -45,16 +45,16 @@ async def create_tables(conn):
 # Команда /start
 @dp.message()
 async def start(message: types.Message):
-    async with message.bot.get("db_pool").acquire() as conn:
+    async with db_pool.acquire() as conn:
         await conn.execute(
-            "INSERT INTO users (user_id, username) VALUES ($1, $2) "
-            "ON CONFLICT (user_id) DO NOTHING",
+            "INSERT INTO users (user_id, username) VALUES ($1, $2) ON CONFLICT (user_id) DO NOTHING",
             message.from_user.id, message.from_user.username
         )
     await message.answer(
         "Привет! Бот для учёта тренировок.\n\nВыберите действие:",
         reply_markup=main_kb()
     )
+
 
 
 # Основной запуск
