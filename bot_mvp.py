@@ -470,37 +470,75 @@ async def show_progress_graph(message: types.Message, user_id: int):
         exercises_dict[r['exercise']].append(r)
 
     for exercise, recs in exercises_dict.items():
-        dates = [r['date'].strftime('%d-%m-%Y') for r in recs]
-        sets_counts = [r['sets'] for r in recs]
-        reps_lists = [r['reps'].split() for r in recs]
-        weights_lists = [r['weight'].split() if r.get('weight') else ['0']*r['sets'] for r in recs]
+        dates, avg_weights, volumes = [], [], []
+        report_text = f"🏋️ Прогресс: {exercise}\n\n"
 
-        fig, ax = plt.subplots(figsize=(6, 3))
-        ax.bar(dates, sets_counts, color="skyblue")
-        ax.set_title(f"Динамика подходов: {exercise}")
-        ax.set_ylabel("Подходы")
-        ax.set_xlabel("Дата")
+        for r in recs:
+            date_str = r['date'].strftime('%d-%m-%Y')
+            dates.append(date_str)
 
-        # Подписи повторений и веса на графике
-        for idx, r in enumerate(recs):
-            for i in range(r['sets']):
-                rep = reps_lists[idx][i] if i < len(reps_lists[idx]) else reps_lists[idx][-1]
-                w = weights_lists[idx][i] if i < len(weights_lists[idx]) else weights_lists[idx][-1]
-                ax.text(idx, sets_counts[idx]+0.1, f"{rep} ({w} кг)", ha='center', fontsize=8)
+            # --- Парсим повторения ---
+            reps = [int(x) for x in r['reps'].split()] if r['reps'] else []
+
+            # --- Парсим веса ---
+            weights = []
+            if r.get('weight'):
+                try:
+                    weights = [float(x) for x in r['weight'].split()]
+                except ValueError:
+                    weights = []
+
+            # Если весов меньше, чем повторений, дублируем последний
+            while len(weights) < len(reps):
+                weights.append(weights[-1] if weights else 0)
+
+            # --- Средний вес и тоннаж ---
+            avg_weight = round(sum(weights) / len(weights), 1) if weights else 0
+            volume = sum(w * rep for w, rep in zip(weights, reps))
+
+            avg_weights.append(avg_weight)
+            volumes.append(volume)
+
+            # --- Формируем текстовый отчёт ---
+            reps_str = "-".join(map(str, reps)) if reps else "0"
+            weights_str = "-".join(map(str, weights)) if weights else "0"
+            report_text += (
+                f"{date_str} — подходы: {r['sets']} | "
+                f"повторений: {reps_str} | "
+                f"вес(кг): {weights_str} | "
+                f"тоннаж: {volume} кг\n"
+            )
+
+        # --- Строим график ---
+        fig, ax1 = plt.subplots(figsize=(6, 3))
+        ax1.plot(dates, avg_weights, color="orange", marker="o", label="Средний вес (кг)")
+        ax1.set_xlabel("Дата")
+        ax1.set_ylabel("Вес (кг)", color="orange")
+        ax1.tick_params(axis='y', labelcolor="orange")
+
+        ax2 = ax1.twinx()
+        ax2.bar(dates, volumes, color="skyblue", alpha=0.6, label="Общий тоннаж (кг)")
+        ax2.set_ylabel("Тоннаж (кг)", color="blue")
+        ax2.tick_params(axis='y', labelcolor="blue")
+
+        fig.suptitle(f"{exercise}")
+        fig.legend(loc="upper left", bbox_to_anchor=(0.1, 0.9))
+        plt.xticks(rotation=30, ha='right')
+        plt.tight_layout()
 
         filename = f"progress_{user_id}_{exercise}.png"
-        plt.tight_layout()
-        plt.savefig(filename, format='png', dpi=100)
+        plt.savefig(filename, format='png', dpi=120)
         plt.close(fig)
 
-        # Отправка фото
+        # --- Отправка фото с текстом ---
         try:
-            await message.answer_photo(FSInputFile(filename))
+            await message.answer_photo(FSInputFile(filename), caption=report_text)
         except Exception as e:
             await message.answer(f"Не удалось отправить график для {exercise}: {e}")
 
         if os.path.exists(filename):
             os.remove(filename)
+
 
 
 
