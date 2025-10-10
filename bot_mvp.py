@@ -457,7 +457,10 @@ async def process_weight(message: types.Message, state: FSMContext):
 async def choose_exercise_to_delete(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     exercises = await get_exercises(user_id)
-    
+
+    # Фильтруем None или пустые значения
+    exercises = [ex for ex in exercises if ex and isinstance(ex, str)]
+
     if not exercises:
         await message.answer("У вас пока нет упражнений для удаления.", reply_markup=main_kb())
         return
@@ -468,6 +471,7 @@ async def choose_exercise_to_delete(message: types.Message, state: FSMContext):
 
     await message.answer("Выберите упражнение для удаления:", reply_markup=kb)
     await state.set_state(DeleteExerciseStates.waiting_for_exercise_to_delete)
+
 
 # ===== Обработка выбора упражнения для удаления =====
 @dp.message(DeleteExerciseStates.waiting_for_exercise_to_delete)
