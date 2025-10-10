@@ -43,6 +43,7 @@ class AddApproachStates(StatesGroup):
     waiting_for_new_exercise = State()
     waiting_for_sets = State()
     waiting_for_reps = State()
+    waiting_for_weight = State() 
 
 # ===== Подключение к БД =====
 
@@ -372,9 +373,40 @@ async def process_reps(message: types.Message, state: FSMContext):
         await message.answer(f"❗ Вы должны ввести {sets} чисел.")
         return
 
-    await save_record(message.from_user.id, data['exercise'], sets, reps)
-    await message.answer(f"✅ Записано: {data['exercise']} — подходы: {sets}, повторений: {reps}", reply_markup=main_kb())
+    await state.update_data(reps=reps)
+    await message.answer("Введите вес (в кг), например: 60")
+    await state.set_state(AddApproachStates.waiting_for_weight)
+@dp.message(AddApproachStates.waiting_for_weight)
+async def process_weight(message: types.Message, state: FSMContext):
+    text = message.text.strip()
+    try:
+        weight = float(text.replace(",", "."))
+    except ValueError:
+        await message.answer("❗ Введите число, например: 60 или 82.5")
+        return
+
+    data = await state.get_data()
+    exercise = data.get("exercise")
+    sets = data.get("sets")
+    reps = data.get("reps")
+
+    # Сохраняем в таблицу records
+    await save_record(message.from_user.id, exercise, sets, reps)
+
+    # Также добавим в таблицу exercises с весом
+    reps_str = " ".join(map(str, reps))
+    await add_exercise_to_db(message.from_user.id, exercise, sets, reps_str, weight)
+
+    await message.answer(
+        f"✅ Записано:\n"
+        f"Упражнение: {exercise}\n"
+        f"Подходов: {sets}\n"
+        f"Повторений: {' '.join(map(str, reps))}\n"
+        f"Вес: {weight} кг",
+        reply_markup=main_kb()
+    )
     await state.clear()
+
 
 
 # ===== История =====
