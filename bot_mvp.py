@@ -84,7 +84,41 @@ async def init_db():
         """)
 
 
+# ===== Функция вставки упражнения в БД с весом =====
+async def add_exercise_to_db(user_id, exercise_text, approach=1, reps="", weight=None):
+    """
+    Вставляет новое упражнение для пользователя в таблицу exercises.
+    approach: количество подходов
+    reps: строка повторений через пробел, например "10 12 15"
+    weight: вес в кг
+    """
+    if not exercise_text or exercise_text.strip() == "":
+        return  # пустой текст игнорируем
 
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO exercises (user_id, exercise, approach, reps, weight)
+            VALUES ($1, $2, $3, $4, $5)
+            """,
+            user_id, exercise_text.strip(), approach, reps.strip(), weight
+        )
+def parse_exercise_input(text: str):
+    """
+    Пример ввода: "Жим лежа 3 10 12 15 60"
+    Формат: <название упражнения> <подходы> <повторения через пробел> <вес>
+    """
+    parts = text.strip().split()
+    if len(parts) < 3:
+        return None
+    # Последний элемент — вес
+    weight = float(parts[-1])
+    # Второй элемент — количество подходов
+    approach = int(parts[-(len(parts)-2)])
+    # Остальное — название упражнения и повторения
+    exercise_text = " ".join(parts[:- (len(parts) - 2)])
+    reps = " ".join(parts[1:-1])
+    return exercise_text, approach, reps, weight
 
 # ===== Функция вставки упражнения в БД =====
 async def add_exercise_to_db(user_id, exercise_text):
@@ -241,14 +275,21 @@ def exercises_kb(exercises: list[str]):
     return ReplyKeyboardMarkup(keyboard=kb_buttons, resize_keyboard=True, one_time_keyboard=True)
 
 
-# ===== Добавить подход =====
-# ===== Добавить подход =====
-# ===== Добавить подход =====
+
 # ===== Добавление подхода =====
-@dp.message(lambda m: m.text == "➕ Добавить подход")
-async def start_add_approach(message: types.Message, state: FSMContext):
+@dp.message(lambda m: m.text.startswith("Добавить:"))
+async def new_exercise(message: types.Message):
     user_id = message.from_user.id
-    exercises = await get_exercises(user_id)  # возвращает список строк или []
+    text = message.text.replace("Добавить:", "").strip()
+    parsed = parse_exercise_input(text)
+    if not parsed:
+        await message.answer("Неверный формат. Пример: Жим лежа 3 10 12 15 60")
+        return
+
+    exercise_text, approach, reps, weight = parsed
+    await add_exercise_to_db(user_id, exercise_text, approach, reps, weight)
+    await message.answer(f"Добавлено: {exercise_text}, подходов: {approach}, повторений: {reps}, вес: {weight} кг")
+
 
     # Фильтруем None
     exercises = [ex for ex in exercises if ex]
