@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 import io
 from datetime import datetime
 from aiogram import types
+from aiogram.types import FSInputFile
 # Загружаем локальный .env только если он есть
 if os.path.exists("ton.env"):
     load_dotenv("ton.env")
@@ -377,38 +378,47 @@ async def history(message: types.Message):
 @dp.message(lambda m: m.text == "📈 Прогресс")
 async def progress(message: types.Message):
     user_id = message.from_user.id
-    await show_progress(message, user_id)
+    await show_progress_graph(message, user_id)
 # ===== Показ прогресса =====
-async def show_progress(message: types.Message, user_id: int):
-    """
-    Показывает динамику подходов по упражнениям для пользователя.
-    """
+async def show_progress_graph(message: types.Message, user_id: int):
     records = await get_user_records(user_id)
     if not records:
         await message.answer("У вас пока нет записей.", reply_markup=main_kb())
         return
 
-    # Сгруппируем записи по упражнениям
     from collections import defaultdict
     exercises_dict = defaultdict(list)
-
     for r in records:
         exercises_dict[r['exercise']].append(r)
 
-    msg_text = "📊 Динамика подходов по упражнениям:\n\n"
-
     for exercise, recs in exercises_dict.items():
-        msg_text += f"{exercise}:\n"
-        for r in recs:
-            date_str = r['date'].strftime('%d-%m-%Y')
-            reps_list = r['reps'].split()
-            sets_count = r['sets']
-            # Визуализация подходов (по количеству подходов)
-            bars = "■" * sets_count
-            msg_text += f"{date_str}: {sets_count} подходов | {bars} | повторений: {'-'.join(reps_list)}\n"
-        msg_text += "-"*30 + "\n"
+        dates = [r['date'].strftime('%d-%m-%Y') for r in recs]
+        sets = [r['sets'] for r in recs]
+        repetitions = ['-'.join(r['reps'].split()) for r in recs]
 
-    await message.answer(msg_text, reply_markup=main_kb())
+        fig, ax = plt.subplots(figsize=(6, 3))
+        ax.bar(dates, sets, color="skyblue")
+        ax.set_title(f"Динамика подходов: {exercise}")
+        ax.set_ylabel("Подходы")
+        ax.set_xlabel("Дата")
+
+        # Подписи повторений
+        for i, rep in enumerate(repetitions):
+            ax.text(i, sets[i]+0.1, rep, ha='center', fontsize=8)
+
+        filename = f"progress_{user_id}_{exercise}.png"
+        plt.tight_layout()
+        plt.savefig(filename, format='png', dpi=100)
+        plt.close(fig)
+
+        # Отправка фото
+        try:
+            await message.answer_photo(FSInputFile(filename))
+        except Exception as e:
+            await message.answer(f"Не удалось отправить график для {exercise}: {e}")
+
+        if os.path.exists(filename):
+            os.remove(filename)
 
 # ===== Рестарт =====
 @dp.message(lambda m: m.text == "🔄 Рестарт бота")
