@@ -371,38 +371,34 @@ async def history(message: types.Message):
 
 
 @dp.message(lambda m: m.text == "📈 Прогресс")
-async def show_progress(message: types.Message):
-    user_id = message.from_user.id
+async def show_progress(message: types.Message, user_id):
     records = await get_user_records(user_id)
-
     if not records:
-        await message.answer("У вас пока нет записей для анализа.", reply_markup=main_kb())
+        await message.answer("У вас пока нет записей.", reply_markup=main_kb())
         return
 
-    # Группируем записи по упражнениям
-    exercise_data = defaultdict(list)
+    # Сгруппируем записи по упражнениям
+    exercises = {}
     for r in records:
-        ex = r['exercise']
+        ex_name = r['exercise']
         date_str = r['date'].strftime('%d-%m-%Y')
         sets = r['sets']
-        exercise_data[ex].append((date_str, sets))
+        if ex_name not in exercises:
+            exercises[ex_name] = []
+        exercises[ex_name].append((date_str, sets))
 
+    # Формируем текст с прогрессом
     msg_text = "📊 Динамика подходов по упражнениям:\n\n"
-
-    for ex, recs in exercise_data.items():
-        msg_text += f"{ex}:\n"
-        # Суммируем подходы по дате
-        recs_sorted = sorted(recs, key=lambda x: x[0])
-        daily_totals = defaultdict(int)
-        for date, sets in recs_sorted:
-            daily_totals[date] += sets
-        
-        for date, total_sets in daily_totals.items():
-            graph = "■" * min(total_sets, 20)
-            msg_text += f"{date}: {total_sets} подходов | {graph}\n"
+    for ex_name, data in exercises.items():
+        msg_text += f"{ex_name}:\n"
+        for date_str, sets in data:
+            # Графика: ■ за каждый подход
+            graph = "■" * sets
+            msg_text += f"{date_str}: {sets} подходов | {graph}\n"
         msg_text += "\n"
 
     await message.answer(msg_text, reply_markup=main_kb())
+
 
 
 # ===== Рестарт =====
