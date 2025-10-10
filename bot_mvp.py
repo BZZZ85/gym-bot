@@ -73,6 +73,7 @@ async def init_db():
             await conn.execute("ALTER TABLE exercises ADD COLUMN weight TEXT;")
         if 'created_at' not in column_names:
             await conn.execute("ALTER TABLE exercises ADD COLUMN created_at TIMESTAMP DEFAULT now();")
+    ALTER TABLE exercises RENAME COLUMN name TO exercise;
 
         # Таблица записей тренировок
         await conn.execute("""
@@ -102,9 +103,8 @@ def main_kb():
 async def add_user(user_id, username):
     async with db_pool.acquire() as conn:
         await conn.execute(
-            "INSERT INTO users (user_id, username) VALUES ($1, $2) ON CONFLICT (user_id) DO NOTHING",
-            user_id, username
-        )
+            "INSERT INTO exercises (user_id, name) VALUES ($1, $2)", user_id, exercise
+                )
 
 async def get_exercises(user_id):
     async with db_pool.acquire() as conn:
