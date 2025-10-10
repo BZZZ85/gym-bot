@@ -26,6 +26,9 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 db_pool = None
+async def create_db_pool():
+    global db_pool
+    db_pool = await asyncpg.create_pool(DATABASE_URL)
 
 # ===== FSM состояния =====
 class AddApproachStates(StatesGroup):
@@ -35,6 +38,7 @@ class AddApproachStates(StatesGroup):
     waiting_for_reps = State()
 
 # ===== Подключение к БД =====
+
 async def init_db():
     global db_pool
     db_pool = await asyncpg.create_pool(DATABASE_URL)
@@ -87,7 +91,27 @@ async def init_db():
                 date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+async def add_new_exercise(user_id, text):
+    """
+    Добавляет новое упражнение для пользователя.
+    Если текст пустой или None, ничего не делает.
+    """
+    if not text or text.strip() == "":
+        print("Пустой текст упражнения, пропускаем вставку.")
+        return
 
+    await add_exercise(user_id, text.strip())
+
+
+async def add_exercise(user_id, exercise_text):
+    """
+    Вставка упражнения в таблицу exercises
+    """
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            "INSERT INTO exercises (user_id, exercise) VALUES ($1, $2)",
+            user_id, exercise_text
+        )
 
 # ===== Главное меню =====
 def main_kb():
