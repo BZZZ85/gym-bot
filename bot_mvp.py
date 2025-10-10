@@ -60,7 +60,15 @@ async def init_db():
                 created_at TIMESTAMP DEFAULT now()
 );
         """)
+try:
+            await conn.execute("ALTER TABLE exercises RENAME COLUMN name TO exercise;")
+        except Exception:
+            pass  # если уже переименовано
 
+        try:
+            await conn.execute("ALTER TABLE exercises ALTER COLUMN exercise DROP NOT NULL;")
+        except Exception:
+            pass  # если уже снят NOT NULL
         # Таблица упражнений (без колонок, которые могут добавляться позже)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS exercises (
@@ -125,6 +133,7 @@ async def add_user(user_id, username):
             user_id,
             username
         )
+        
 
 
 async def get_exercises(user_id):
