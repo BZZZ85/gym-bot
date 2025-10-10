@@ -553,6 +553,59 @@ async def show_progress_graph(message: types.Message, user_id: int):
         if os.path.exists(filename):
             os.remove(filename)
 
+#статистика
+@dp.message(lambda m: m.text == "📊 Статистика")
+async def show_statistics(message: types.Message):
+    user_id = message.from_user.id
+    async with db_pool.acquire() as conn:
+        records = await conn.fetch("SELECT exercise, sets, reps, weight FROM records WHERE user_id=$1", user_id)
+
+    if not records:
+        await message.answer("У вас пока нет записей для статистики.", reply_markup=main_kb())
+        return
+
+    total_workouts = len(records)
+    total_sets = sum(r['sets'] for r in records)
+
+    # Собираем все веса и повторения
+    weights_all = []
+    exercise_reps = defaultdict(list)  # {exercise: [reps]}
+    exercise_max_weight = defaultdict(float)  # {exercise: max_weight}
+    for r in records:
+        # Вес
+        if r['weight']:
+            try:
+                weights_list = [float(w) for w in r['weight'].split()]
+                weights_all.extend(weights_list)
+                exercise_max_weight[r['exercise']] = max(exercise_max_weight[r['exercise']], max(weights_list))
+            except ValueError:
+                pass
+
+        # Повторения
+        if r['reps']:
+            try:
+                reps_list = [int(x) for x in r['reps'].split()]
+                exercise_reps[r['exercise']].extend(reps_list)
+            except ValueError:
+                pass
+
+    avg_weight = round(sum(weights_all) / len(weights_all), 1) if weights_all else 0
+
+    msg = (
+        f"📊 Ваша статистика:\n"
+        f"Количество тренировок: {total_workouts}\n"
+        f"Общее количество подходов: {total_sets}\n"
+        f"Средний вес по подходам: {avg_weight} кг\n\n"
+        f"Статистика по упражнениям:\n"
+    )
+
+    for exercise, reps in exercise_reps.items():
+        avg_reps = round(sum(reps) / len(reps), 1) if reps else 0
+        max_reps = max(reps) if reps else 0
+        max_weight = exercise_max_weight[exercise] if exercise_max_weight.get(exercise) else 0
+        msg += f"- {exercise}: средние {avg_reps} повторений, макс {max_reps} повторений, макс вес {max_weight} кг\n"
+
+    await message.answer(msg, reply_markup=main_kb())
 
 
 
