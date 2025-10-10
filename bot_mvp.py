@@ -45,15 +45,7 @@ async def init_db():
     db_pool = await asyncpg.create_pool(DATABASE_URL)
 
     async with db_pool.acquire() as conn:
-        # ===== Создание таблицы users, если её нет =====
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                user_id BIGINT PRIMARY KEY,
-                username TEXT
-            )
-        """)
-
-        # ===== Создание таблицы exercises, если её нет =====
+        # ===== Таблица упражнений =====
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS exercises (
                 id SERIAL PRIMARY KEY,
@@ -66,21 +58,13 @@ async def init_db():
             )
         """)
 
-        # ===== Проверяем старую колонку name =====
-        name_column = await conn.fetchrow("""
-            SELECT column_name FROM information_schema.columns
-            WHERE table_name='exercises' AND column_name='name';
-        """)
-        exercise_column = await conn.fetchrow("""
-            SELECT column_name FROM information_schema.columns
-            WHERE table_name='exercises' AND column_name='exercise';
-        """)
+        # Удаляем старую колонку name, если она осталась
+        try:
+            await conn.execute("ALTER TABLE exercises DROP COLUMN IF EXISTS name;")
+        except Exception as e:
+            print("Ошибка при удалении колонки name:", e)
 
-        if name_column and not exercise_column:
-            await conn.execute("ALTER TABLE exercises RENAME COLUMN name TO exercise;")
-            await conn.execute("ALTER TABLE exercises ALTER COLUMN exercise DROP NOT NULL;")
-
-        # ===== Создание таблицы records =====
+        # ===== Таблица записей тренировок =====
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS records (
                 id SERIAL PRIMARY KEY,
@@ -91,6 +75,7 @@ async def init_db():
                 date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
 
 
 
