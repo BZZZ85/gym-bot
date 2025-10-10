@@ -238,7 +238,29 @@ def exercises_kb(exercises: list[str]):
             [KeyboardButton(text="↩ В меню")]
         ]
     return ReplyKeyboardMarkup(keyboard=kb_buttons, resize_keyboard=True, one_time_keyboard=True)
+# ===== Обработчик кнопки "➕ Добавить подход" =====
+@dp.message(lambda m: m.text == "➕ Добавить подход")
+async def add_approach_button(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    exercises = await get_exercises(user_id)
 
+    if not exercises:
+        await message.answer(
+            "У вас пока нет упражнений. Добавьте новое!",
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard=[
+                    [KeyboardButton(text="➕ Добавить новое упражнение")],
+                    [KeyboardButton(text="↩ В меню")]
+                ],
+                resize_keyboard=True
+            )
+        )
+        await state.set_state(AddApproachStates.waiting_for_exercise)
+        return
+
+    kb = exercises_kb(exercises)
+    await message.answer("Выберите упражнение или добавьте новое:", reply_markup=kb)
+    await state.set_state(AddApproachStates.waiting_for_exercise)
 
 
 # ===== Добавление подхода =====
