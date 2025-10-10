@@ -376,7 +376,12 @@ async def history(message: types.Message):
 @dp.message(lambda m: m.text == "📈 Прогресс")
 async def progress_graph(message: types.Message):
     user_id = message.from_user.id
-    await show_progress_graph(message, user_id)
+    # Подключаемся к БД
+    conn = await asyncpg.connect(user="postgres", password="password", database="fitness", host="localhost")
+    try:
+        await show_progress(message, user_id, conn)
+    finally:
+        await conn.close()
 # ===== Показ прогресса =====
 async def fetch_user_exercises(user_id: int, conn):
     """
