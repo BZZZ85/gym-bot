@@ -111,16 +111,15 @@ def parse_exercise_input(text: str):
     parts = text.strip().split()
     if len(parts) < 4:
         return None
-
     try:
-        weight = float(parts[-1])              # последний элемент — вес
-        approach = int(parts[-(len(parts)-2)]) # количество подходов
-        reps = " ".join(parts[-(len(parts)-2)+1:-1])  # все элементы между подходами и весом
-        exercise_text = " ".join(parts[:-(len(parts)-2)])  # название упражнения
+        weight = float(parts[-1])           # последний элемент — вес
+        approach = int(parts[-(len(parts)-2)])  # количество подходов
+        reps = " ".join(parts[-(len(parts)-2)+1:-1])  # повторения
+        exercise_text = " ".join(parts[:-(len(parts)-2)])  # название
     except ValueError:
         return None
+    return exercise_text, approach, reps, weight
 
-  return exercise_text, approach, reps, weight
 
 # ===== FSM-хэндлер для добавления нового упражнения =====
 @dp.message(AddApproachStates.waiting_for_new_exercise)
