@@ -35,7 +35,7 @@ class AddApproachStates(StatesGroup):
     waiting_for_reps = State()
 
 # ===== Подключение к БД =====
-async def main():
+async def init_db():
     global db_pool
     db_pool = await asyncpg.create_pool(DATABASE_URL)
 
