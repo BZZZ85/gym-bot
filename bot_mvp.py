@@ -120,7 +120,7 @@ def parse_exercise_input(text: str):
     except ValueError:
         return None
 
-    return exercise_text, approach, reps, weigh
+  return exercise_text, approach, reps, weight
 
 # ===== FSM-хэндлер для добавления нового упражнения =====
 @dp.message(AddApproachStates.waiting_for_new_exercise)
@@ -208,16 +208,7 @@ async def start(message: types.Message, state: FSMContext = None):
         await state.clear()
 
 # ===== Добавить подход =====
-# ===== Функции для клавиатур =====
-def main_kb():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="📜 История"), KeyboardButton(text="📈 Прогресс"), KeyboardButton(text="📊 Статистика")],
-            [KeyboardButton(text="➕ Добавить подход")],
-            [KeyboardButton(text="⏰ Напоминания"), KeyboardButton(text="🔄 Рестарт бота")]
-        ],
-        resize_keyboard=True
-    )
+
 
 def sets_kb():
     return ReplyKeyboardMarkup(
@@ -230,18 +221,6 @@ def sets_kb():
         one_time_keyboard=True
     )
 
-def exercises_kb(exercises: list[str]):
-    if exercises:
-        kb_buttons = [[KeyboardButton(text=ex)] for ex in exercises] + [
-            [KeyboardButton(text="➕ Добавить новое упражнение")],
-            [KeyboardButton(text="↩ В меню")]
-        ]
-    else:
-        kb_buttons = [
-            [KeyboardButton(text="➕ Добавить новое упражнение")],
-            [KeyboardButton(text="↩ В меню")]
-        ]
-    return ReplyKeyboardMarkup(keyboard=kb_buttons, resize_keyboard=True, one_time_keyboard=True)
 
 # ===== Добавить подход =====
 # ===== Функция для клавиатуры с упражнениями =====
@@ -323,22 +302,7 @@ async def process_exercise(message: types.Message, state: FSMContext):
     await ask_for_sets(message, state)
 
 
-@dp.message(AddApproachStates.waiting_for_new_exercise)
-async def add_new_exercise(message: types.Message, state: FSMContext):
-    text = message.text.strip()
-    user_id = message.from_user.id
 
-    if text == "↩ В меню":
-        await start(message, state)
-        return
-
-    # Добавляем упражнение в БД
-    await add_exercise(user_id, text)
-
-    await state.update_data(exercise=text)
-    await message.answer(f"✅ Упражнение '{text}' добавлено!")
-
-    await ask_for_sets(message, state)
 
 
 async def ask_for_sets(message: types.Message, state: FSMContext):
