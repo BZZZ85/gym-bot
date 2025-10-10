@@ -378,42 +378,74 @@ async def progress_graph(message: types.Message):
     user_id = message.from_user.id
     await show_progress_graph(message, user_id)
 # ===== Показ прогресса =====
-async def show_progress_graph(message, user_id):
-    records = await get_user_records(user_id)
-    if not records:
-        await message.answer("У вас пока нет записей для построения графика.", reply_markup=main_kb())
+async def fetch_user_exercises(user_id: int, conn):
+    """
+    Получаем все упражнения пользователя с датой, подходами и повторениями.
+    """
+    rows = await conn.fetch(
+        "SELECT exercise, date, sets, repetitions FROM exercises WHERE user_id=$1 ORDER BY date ASC",
+        user_id
+    )
+    data = {}
+    for row in rows:
+        ex = row["exercise"]
+        if ex not in data:
+            data[ex] = []
+        data[ex].append({
+            "date": row["date"].strftime("%d-%m-%Y"),
+            "sets": row["sets"],
+            "repetitions": row["repetitions"]
+        })
+    return data
+
+async def send_graph(message: types.Message, user_id: int, exercise_name: str, dates, sets, repetitions):
+    """
+    Строим и отправляем график одного упражнения
+    """
+    fig, ax = plt.subplots(figsize=(6, 3))
+    ax.bar(dates, sets, color="skyblue")
+    ax.set_title(f"Динамика подходов: {exercise_name}")
+    ax.set_ylabel("Подходы")
+    ax.set_xlabel("Дата")
+
+    # Подписи повторений
+    for i, rep in enumerate(repetitions):
+        ax.text(i, sets[i] + 0.1, rep, ha='center', fontsize=8)
+
+    filename = f"progress_{user_id}_{exercise_name}.png"
+    plt.tight_layout()
+    plt.savefig(filename, format='png', dpi=100)
+    plt.close(fig)
+
+    # безопасная отправка
+    for _ in range(3):
+        try:
+            photo = types.FSInputFile(filename)
+            await message.answer_photo(photo=photo)
+            break
+        except TelegramNetworkError:
+            await asyncio.sleep(2)
+    else:
+        await message.answer(f"Не удалось отправить график для {exercise_name}.")
+
+    if os.path.exists(filename):
+        os.remove(filename)
+
+async def show_progress(message: types.Message, user_id: int, conn):
+    """
+    Главная команда для пользователя: строим графики по всем упражнениям
+    """
+    data = await fetch_user_exercises(user_id, conn)
+
+    if not data:
+        await message.answer("Данные по упражнениям не найдены.")
         return
 
-    exercises_data = {}
-    for r in records:
-        exercise = r['exercise']
-        date = r['date'].strftime("%d-%m-%Y")
-        reps_list = list(map(int, r['reps'].split()))
-        total_reps = sum(reps_list)
-        exercises_data.setdefault(exercise, []).append((date, total_reps))
-
-    plt.figure(figsize=(8, 4))
-    for exercise, data_points in exercises_data.items():
-        dates = [d for d, _ in data_points]
-        totals = [t for _, t in data_points]
-        plt.plot(dates, totals, marker='o', label=exercise)
-
-    plt.title("Прогресс по упражнениям")
-    plt.xlabel("Дата")
-    plt.ylabel("Суммарное количество повторений")
-    plt.xticks(rotation=45)
-    plt.legend()
-    plt.tight_layout()
-
-    # Сохраняем график в BytesIO
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png')
-    buf.seek(0)
-    plt.close()
-
-    # В aiogram v3 нужно использовать types.BufferedInputFile
-    photo = types.BufferedInputFile(buf, filename="progress.png")
-    await message.answer_photo(photo=photo)
+    for exercise, logs in data.items():
+        dates = [log["date"] for log in logs]
+        sets = [log["sets"] for log in logs]
+        repetitions = [log["repetitions"] for log in logs]
+        await send_graph(message, user_id, exercise, dates, sets, repetitions)
 
 # ===== Рестарт =====
 @dp.message(lambda m: m.text == "🔄 Рестарт бота")
