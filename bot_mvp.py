@@ -114,10 +114,13 @@ def main_kb():
 
 # ===== Работа с БД =====
 async def add_user(user_id, username):
-    async with db_pool.acquire() as conn:
+    async with pool.acquire() as conn:
         await conn.execute(
-            "INSERT INTO exercises (user_id, name) VALUES ($1, $2)", user_id, exercise
-                )
+            "INSERT INTO users (user_id, username) VALUES ($1, $2) ON CONFLICT (user_id) DO NOTHING",
+            user_id,
+            username,
+        )
+
 
 async def get_exercises(user_id):
     async with db_pool.acquire() as conn:
