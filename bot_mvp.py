@@ -65,6 +65,30 @@ async def start(message: types.Message):
         "Привет! Бот для учёта тренировок.\n\nВыберите действие:",
         reply_markup=main_kb()
     )
+    # Обработка кнопки "Добавить подход"
+@dp.message(F.text == "➕ Добавить подход")
+async def add_reps_prompt(message: types.Message):
+    await message.answer("Введите количество подходов (число):")
+    dp.data[message.from_user.id] = {"state": "waiting_for_reps"}
+
+# Получение количества подходов
+@dp.message()
+async def add_reps(message: types.Message):
+    user_data = dp.data.get(message.from_user.id)
+    if user_data and user_data.get("state") == "waiting_for_reps":
+        try:
+            reps = int(message.text)
+            async with db_pool.acquire() as conn:
+                await conn.execute(
+                    "INSERT INTO exercises (user_id, reps) VALUES ($1, $2)",
+                    message.from_user.id, reps
+                )
+            await message.answer(f"✅ Добавлено {reps} подходов!")
+        except ValueError:
+            await message.answer("❌ Введите корректное число.")
+        finally:
+            dp.data[message.from_user.id] = {}  # Сброс состояния
+
 
 # Основной запуск
 async def main():
