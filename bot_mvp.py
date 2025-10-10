@@ -86,12 +86,9 @@ async def init_db():
 
 
 # ===== Функция вставки упражнения в БД с весом =====
-async def add_exercise_to_db(user_id, exercise_text, approach=1, reps="", weight=None):
+async def add_exercise_to_db(user_id, exercise_text, approach=None, reps=None, weight=None):
     """
     Вставляет новое упражнение для пользователя в таблицу exercises.
-    approach: количество подходов
-    reps: строка повторений через пробел, например "10 12 15"
-    weight: вес в кг
     """
     if not exercise_text or exercise_text.strip() == "":
         return  # пустой текст игнорируем
@@ -102,7 +99,7 @@ async def add_exercise_to_db(user_id, exercise_text, approach=1, reps="", weight
             INSERT INTO exercises (user_id, exercise, approach, reps, weight)
             VALUES ($1, $2, $3, $4, $5)
             """,
-            user_id, exercise_text.strip(), approach, reps.strip(), weight
+            user_id, exercise_text.strip(), approach, reps, weight
         )
 def parse_exercise_input(text: str):
     """
@@ -376,33 +373,41 @@ async def process_reps(message: types.Message, state: FSMContext):
     await state.update_data(reps=reps)
     await message.answer("Введите вес (в кг), например: 60")
     await state.set_state(AddApproachStates.waiting_for_weight)
+    
 @dp.message(AddApproachStates.waiting_for_weight)
 async def process_weight(message: types.Message, state: FSMContext):
     text = message.text.strip()
+    data = await state.get_data()
+    sets = data.get("sets")
+
+    # Разбираем список весов
     try:
-        weight = float(text.replace(",", "."))
+        weights = list(map(float, text.replace(",", ".").split()))
     except ValueError:
-        await message.answer("❗ Введите число, например: 60 или 82.5")
+        await message.answer("❗ Введите веса через пробел, например: 60 70 80")
         return
 
-    data = await state.get_data()
+    # Проверяем, что количество весов соответствует количеству подходов
+    if len(weights) != sets:
+        await message.answer(f"❗ Вы должны ввести {sets} значений веса.")
+        return
+
     exercise = data.get("exercise")
-    sets = data.get("sets")
     reps = data.get("reps")
 
-    # Сохраняем в таблицу records
-    await save_record(message.from_user.id, exercise, sets, reps)
-
-    # Также добавим в таблицу exercises с весом
+    # Сохраняем в БД
     reps_str = " ".join(map(str, reps))
-    await add_exercise_to_db(message.from_user.id, exercise, sets, reps_str, weight)
+    weights_str = " ".join(map(str, weights))
+
+    await add_exercise_to_db(message.from_user.id, exercise, sets, reps_str, weights_str)
+    await save_record(message.from_user.id, exercise, sets, reps_str)
 
     await message.answer(
         f"✅ Записано:\n"
         f"Упражнение: {exercise}\n"
         f"Подходов: {sets}\n"
-        f"Повторений: {' '.join(map(str, reps))}\n"
-        f"Вес: {weight} кг",
+        f"Повторения: {' '.join(map(str, reps))}\n"
+        f"Вес (кг): {' '.join(map(str, weights))}",
         reply_markup=main_kb()
     )
     await state.clear()
@@ -450,29 +455,46 @@ async def show_progress_graph(message: types.Message, user_id: int):
         sets = [r['sets'] for r in recs]
         repetitions = ['-'.join(r['reps'].split()) for r in recs]
 
+        # Попробуем взять веса (если они есть)
+        weights = []
+        for r in recs:
+            if 'weight' in r and r['weight']:
+                weights.append('-'.join(str(w) for w in r['weight'].split()))
+            else:
+                weights.append("—")
+
+        # === График подходов ===
         fig, ax = plt.subplots(figsize=(6, 3))
         ax.bar(dates, sets, color="skyblue")
         ax.set_title(f"Динамика подходов: {exercise}")
         ax.set_ylabel("Подходы")
         ax.set_xlabel("Дата")
 
-        # Подписи повторений
-        for i, rep in enumerate(repetitions):
-            ax.text(i, sets[i]+0.1, rep, ha='center', fontsize=8)
+        # Подписи повторений и весов
+        for i, (rep, wt) in enumerate(zip(repetitions, weights)):
+            ax.text(i, sets[i] + 0.1, f"{rep}\n{wt} кг", ha='center', fontsize=8)
 
         filename = f"progress_{user_id}_{exercise}.png"
         plt.tight_layout()
         plt.savefig(filename, format='png', dpi=100)
         plt.close(fig)
 
-        # Отправка фото
+        # === Отправка фото и текстовое дублирование ===
         try:
-            await message.answer_photo(FSInputFile(filename))
+            await message.answer_photo(
+                FSInputFile(filename),
+                caption=f"🏋️ {exercise}\n\n" +
+                        "\n".join([
+                            f"{d}: {s} подходов | повторения: {r} | вес(кг): {w}"
+                            for d, s, r, w in zip(dates, sets, repetitions, weights)
+                        ])
+            )
         except Exception as e:
             await message.answer(f"Не удалось отправить график для {exercise}: {e}")
 
         if os.path.exists(filename):
             os.remove(filename)
+
 
 # ===== Рестарт =====
 @dp.message(lambda m: m.text == "🔄 Рестарт бота")
