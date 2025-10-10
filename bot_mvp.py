@@ -86,7 +86,7 @@ async def init_db():
             await conn.execute("ALTER TABLE exercises ADD COLUMN weight TEXT;")
         if 'created_at' not in column_names:
             await conn.execute("ALTER TABLE exercises ADD COLUMN created_at TIMESTAMP DEFAULT now();")
-    ALTER TABLE exercises RENAME COLUMN name TO exercise;
+    
 
           # Таблица записей тренировок
         await conn.execute("""
