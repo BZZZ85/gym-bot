@@ -466,92 +466,111 @@ async def history(message: types.Message):
     await message.answer(msg_text, reply_markup=main_kb())
 
 # ===== Обработчик кнопки 📈 Прогресс =====
-# ===== Обработчик кнопки 📈 Прогресс =====
+
+from aiogram.fsm.state import State, StatesGroup
+
+# ===== FSM состояние для выбора упражнения =====
+class ProgressStates(StatesGroup):
+    waiting_for_exercise = State()
+
+# ===== Обработчик кнопки "📈 Прогресс" =====
 @dp.message(lambda m: m.text == "📈 Прогресс")
-async def progress(message: types.Message):
+async def progress(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
-    await show_progress_graph(message, user_id)
-# ===== Показ прогресса =====
-async def show_progress_graph(message: types.Message, user_id: int):
-    records = await get_user_records(user_id)
-    if not records:
-        await message.answer("У вас пока нет записей.", reply_markup=main_kb())
+    exercises = await get_exercises(user_id)
+
+    if not exercises:
+        await message.answer("У вас пока нет упражнений.", reply_markup=main_kb())
         return
 
-    from collections import defaultdict
-    exercises_dict = defaultdict(list)
+    kb = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=ex)] for ex in exercises] +
+                 [[KeyboardButton(text="↩ В меню")]],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+    await message.answer("Выберите упражнение для просмотра прогресса:", reply_markup=kb)
+    await state.set_state(ProgressStates.waiting_for_exercise)
+
+# ===== Обработчик выбора упражнения =====
+@dp.message(ProgressStates.waiting_for_exercise)
+async def progress_select_exercise(message: types.Message, state: FSMContext):
+    text = message.text.strip()
+
+    if text == "↩ В меню":
+        await start(message, state)
+        return
+
+    user_id = message.from_user.id
+    exercises = await get_exercises(user_id)
+
+    if text not in exercises:
+        await message.answer("❗ Выберите упражнение из списка.")
+        return
+
+    await show_progress_graph(message, user_id, exercise=text)
+    await state.clear()
+
+# ===== Построение графика без тоннажа =====
+async def show_progress_graph(message: types.Message, user_id: int, exercise: str):
+    records = await get_user_records(user_id)
+    records = [r for r in records if r['exercise'] == exercise]
+
+    if not records:
+        await message.answer(f"Записей для упражнения '{exercise}' пока нет.", reply_markup=main_kb())
+        return
+
+    dates, sets_list, reps_text_list, weights_text_list = [], [], [], []
+    report_text = f"🏋️ Прогресс: {exercise}\n\n"
+
     for r in records:
-        exercises_dict[r['exercise']].append(r)
+        date_str = r['date'].strftime('%d-%m-%Y')
+        dates.append(date_str)
+        sets = r['sets']
+        reps = [int(x) for x in r['reps'].split()] if r['reps'] else [0]*sets
+        weights = [float(x) for x in r['weight'].split()] if r.get('weight') else [0]*sets
 
-    for exercise, recs in exercises_dict.items():
-        dates, avg_weights, volumes = [], [], []
-        report_text = f"🏋️ Прогресс: {exercise}\n\n"
+        while len(weights) < sets:
+            weights.append(weights[-1] if weights else 0)
+        while len(reps) < sets:
+            reps.append(reps[-1] if reps else 0)
 
-        for r in recs:
-            date_str = r['date'].strftime('%d-%m-%Y')
-            dates.append(date_str)
+        sets_list.append(sets)
+        reps_text_list.append("-".join(map(str, reps)))
+        weights_text_list.append("-".join(map(str, weights)))
 
-            # --- Парсим повторения ---
-            reps = [int(x) for x in r['reps'].split()] if r['reps'] else []
+        report_text += (
+            f"{date_str} — подходы: {sets} | "
+            f"повторений: {'-'.join(map(str, reps))} | "
+            f"вес(кг): {'-'.join(map(str, weights))}\n"
+        )
 
-            # --- Парсим веса ---
-            weights = []
-            if r.get('weight'):
-                try:
-                    weights = [float(x) for x in r['weight'].split()]
-                except ValueError:
-                    weights = []
+    # --- График ---
+    fig, ax = plt.subplots(figsize=(6, 3))
+    ax.bar(dates, sets_list, color="skyblue")
+    ax.set_xlabel("Дата")
+    ax.set_ylabel("Подходы")
+    ax.set_title(f"Прогресс: {exercise}")
 
-            # Если весов меньше, чем повторений, дублируем последний
-            while len(weights) < len(reps):
-                weights.append(weights[-1] if weights else 0)
+    for i in range(len(dates)):
+        ax.text(i, sets_list[i]+0.1, f"{reps_text_list[i]}\n{weights_text_list[i]} кг",
+                ha='center', fontsize=8)
 
-            # --- Средний вес и тоннаж ---
-            avg_weight = round(sum(weights) / len(weights), 1) if weights else 0
-            volume = sum(w * rep for w, rep in zip(weights, reps))
+    plt.xticks(rotation=30, ha='right')
+    plt.tight_layout()
 
-            avg_weights.append(avg_weight)
-            volumes.append(volume)
+    filename = f"progress_{user_id}_{exercise}.png"
+    plt.savefig(filename, format='png', dpi=120)
+    plt.close(fig)
 
-            # --- Формируем текстовый отчёт ---
-            reps_str = "-".join(map(str, reps)) if reps else "0"
-            weights_str = "-".join(map(str, weights)) if weights else "0"
-            report_text += (
-                f"{date_str} — подходы: {r['sets']} | "
-                f"повторений: {reps_str} | "
-                f"вес(кг): {weights_str} | "
-                f"тоннаж: {volume} кг\n"
-            )
+    try:
+        await message.answer_photo(FSInputFile(filename), caption=report_text)
+    except Exception as e:
+        await message.answer(f"Не удалось отправить график: {e}")
 
-        # --- Строим график ---
-        fig, ax1 = plt.subplots(figsize=(6, 3))
-        ax1.plot(dates, avg_weights, color="orange", marker="o", label="Средний вес (кг)")
-        ax1.set_xlabel("Дата")
-        ax1.set_ylabel("Вес (кг)", color="orange")
-        ax1.tick_params(axis='y', labelcolor="orange")
+    if os.path.exists(filename):
+        os.remove(filename)
 
-        ax2 = ax1.twinx()
-        ax2.bar(dates, volumes, color="skyblue", alpha=0.6, label="Общий тоннаж (кг)")
-        ax2.set_ylabel("Тоннаж (кг)", color="blue")
-        ax2.tick_params(axis='y', labelcolor="blue")
-
-        fig.suptitle(f"{exercise}")
-        fig.legend(loc="upper left", bbox_to_anchor=(0.1, 0.9))
-        plt.xticks(rotation=30, ha='right')
-        plt.tight_layout()
-
-        filename = f"progress_{user_id}_{exercise}.png"
-        plt.savefig(filename, format='png', dpi=120)
-        plt.close(fig)
-
-        # --- Отправка фото с текстом ---
-        try:
-            await message.answer_photo(FSInputFile(filename), caption=report_text)
-        except Exception as e:
-            await message.answer(f"Не удалось отправить график для {exercise}: {e}")
-
-        if os.path.exists(filename):
-            os.remove(filename)
 
 #статистика
 @dp.message(lambda m: m.text == "📊 Статистика")
