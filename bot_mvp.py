@@ -60,7 +60,7 @@ async def init_db():
                 created_at TIMESTAMP DEFAULT now()
 );
         """)
-try:
+        try:
             await conn.execute("ALTER TABLE exercises RENAME COLUMN name TO exercise;")
         except Exception:
             pass  # если уже переименовано
