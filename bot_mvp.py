@@ -369,36 +369,43 @@ async def history(message: types.Message):
         msg_text += "-"*20 + "\n"
     await message.answer(msg_text, reply_markup=main_kb())
 
-
+# ===== Обработчик кнопки 📈 Прогресс =====
 @dp.message(lambda m: m.text == "📈 Прогресс")
-async def show_progress(message: types.Message, user_id):
+async def progress(message: types.Message):
+    user_id = message.from_user.id
+    await show_progress(message, user_id)
+@dp.message(lambda m: m.text == "📈 Прогресс")
+# ===== Показ прогресса =====
+async def show_progress(message: types.Message, user_id: int):
+    """
+    Показывает динамику подходов по упражнениям для пользователя.
+    """
     records = await get_user_records(user_id)
     if not records:
         await message.answer("У вас пока нет записей.", reply_markup=main_kb())
         return
 
     # Сгруппируем записи по упражнениям
-    exercises = {}
-    for r in records:
-        ex_name = r['exercise']
-        date_str = r['date'].strftime('%d-%m-%Y')
-        sets = r['sets']
-        if ex_name not in exercises:
-            exercises[ex_name] = []
-        exercises[ex_name].append((date_str, sets))
+    from collections import defaultdict
+    exercises_dict = defaultdict(list)
 
-    # Формируем текст с прогрессом
+    for r in records:
+        exercises_dict[r['exercise']].append(r)
+
     msg_text = "📊 Динамика подходов по упражнениям:\n\n"
-    for ex_name, data in exercises.items():
-        msg_text += f"{ex_name}:\n"
-        for date_str, sets in data:
-            # Графика: ■ за каждый подход
-            graph = "■" * sets
-            msg_text += f"{date_str}: {sets} подходов | {graph}\n"
-        msg_text += "\n"
+
+    for exercise, recs in exercises_dict.items():
+        msg_text += f"{exercise}:\n"
+        for r in recs:
+            date_str = r['date'].strftime('%d-%m-%Y')
+            reps_list = r['reps'].split()
+            sets_count = r['sets']
+            # Визуализация подходов (по количеству подходов)
+            bars = "■" * sets_count
+            msg_text += f"{date_str}: {sets_count} подходов | {bars} | повторений: {'-'.join(reps_list)}\n"
+        msg_text += "-"*30 + "\n"
 
     await message.answer(msg_text, reply_markup=main_kb())
-
 
 
 # ===== Рестарт =====
