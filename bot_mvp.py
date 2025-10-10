@@ -140,14 +140,47 @@ async def start(message: types.Message, state: FSMContext = None):
         await state.clear()
 
 # ===== Добавить подход =====
+# ===== Функции для клавиатур =====
+def main_kb():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📜 История"), KeyboardButton(text="📈 Прогресс"), KeyboardButton(text="📊 Статистика")],
+            [KeyboardButton(text="➕ Добавить подход")],
+            [KeyboardButton(text="⏰ Напоминания"), KeyboardButton(text="🔄 Рестарт бота")]
+        ],
+        resize_keyboard=True
+    )
+
+def sets_kb():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="1️⃣"), KeyboardButton(text="2️⃣"), KeyboardButton(text="3️⃣")],
+            [KeyboardButton(text="4️⃣"), KeyboardButton(text="5️⃣")],
+            [KeyboardButton(text="↩ В меню")]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+
+def exercises_kb(exercises: list[str]):
+    if exercises:
+        kb_buttons = [[KeyboardButton(text=ex)] for ex in exercises] + [
+            [KeyboardButton(text="➕ Добавить новое упражнение")],
+            [KeyboardButton(text="↩ В меню")]
+        ]
+    else:
+        kb_buttons = [
+            [KeyboardButton(text="➕ Добавить новое упражнение")],
+            [KeyboardButton(text="↩ В меню")]
+        ]
+    return ReplyKeyboardMarkup(keyboard=kb_buttons, resize_keyboard=True, one_time_keyboard=True)
+
+# ===== Добавить подход =====
 @dp.message(lambda m: m.text == "➕ Добавить подход")
 async def start_add_approach(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     exercises = await get_exercises(user_id)
-    kb_buttons = [[KeyboardButton(ex)] for ex in exercises] + \
-                 [[KeyboardButton("➕ Добавить новое упражнение")], [KeyboardButton("↩ В меню")]] \
-                 if exercises else [[KeyboardButton("➕ Добавить новое упражнение")], [KeyboardButton("↩ В меню")]]
-    kb = ReplyKeyboardMarkup(keyboard=kb_buttons, resize_keyboard=True, one_time_keyboard=True)
+    kb = exercises_kb(exercises)
     await message.answer("Выберите упражнение или добавьте новое:", reply_markup=kb)
     await state.set_state(AddApproachStates.waiting_for_exercise)
 
@@ -170,38 +203,21 @@ async def process_exercise(message: types.Message, state: FSMContext):
         return
 
     await state.update_data(exercise=text)
-
-    kb = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="1️⃣"), KeyboardButton(text="2️⃣"), KeyboardButton(text="3️⃣")],
-            [KeyboardButton(text="4️⃣"), KeyboardButton(text="5️⃣")],
-            [KeyboardButton("↩ В меню")]
-        ],
-        resize_keyboard=True, one_time_keyboard=True
-    )
-    await message.answer("Выберите количество подходов:", reply_markup=kb)
+    await message.answer("Выберите количество подходов:", reply_markup=sets_kb())
     await state.set_state(AddApproachStates.waiting_for_sets)
 
 @dp.message(AddApproachStates.waiting_for_new_exercise)
 async def add_new_exercise(message: types.Message, state: FSMContext):
     text = message.text.strip()
     user_id = message.from_user.id
+
     if text == "↩ В меню":
         await start(message, state)
         return
 
     await add_exercise(user_id, text)
     await state.update_data(exercise=text)
-
-    kb = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="1️⃣"), KeyboardButton(text="2️⃣"), KeyboardButton(text="3️⃣")],
-            [KeyboardButton(text="4️⃣"), KeyboardButton(text="5️⃣")],
-            [KeyboardButton("↩ В меню")]
-        ],
-        resize_keyboard=True, one_time_keyboard=True
-    )
-    await message.answer(f"✅ Упражнение '{text}' добавлено!\nВыберите количество подходов:", reply_markup=kb)
+    await message.answer(f"✅ Упражнение '{text}' добавлено!\nВыберите количество подходов:", reply_markup=sets_kb())
     await state.set_state(AddApproachStates.waiting_for_sets)
 
 @dp.message(AddApproachStates.waiting_for_sets)
