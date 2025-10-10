@@ -379,7 +379,6 @@ async def progress_graph(message: types.Message):
     await show_progress_graph(message, user_id)
 # ===== Показ прогресса =====
 async def show_progress_graph(message, user_id):
-    # Получаем все записи пользователя
     records = await get_user_records(user_id)
     if not records:
         await message.answer("У вас пока нет записей для построения графика.", reply_markup=main_kb())
@@ -408,13 +407,14 @@ async def show_progress_graph(message, user_id):
     plt.legend()
     plt.tight_layout()
 
-    # Сохраняем график в BytesIO и отправляем
+    # Сохраняем график в BytesIO
     buf = io.BytesIO()
     plt.savefig(buf, format='png')
     buf.seek(0)
     plt.close()
 
-    photo = InputFile(buf, filename="progress.png")
+    # Создаём InputFile через from_buffer
+    photo = InputFile.from_buffer(buf, filename="progress.png")
     await message.answer_photo(photo=photo)
 
 # ===== Рестарт =====
