@@ -114,6 +114,7 @@ def main_kb():
 
 # ===== Работа с БД =====
 async def add_user(user_id, username):
+     global pool
     async with pool.acquire() as conn:
         await conn.execute(
             "INSERT INTO users (user_id, username) VALUES ($1, $2) ON CONFLICT (user_id) DO NOTHING",
@@ -123,11 +124,13 @@ async def add_user(user_id, username):
 
 
 async def get_exercises(user_id):
+    global pool
     async with db_pool.acquire() as conn:
         rows = await conn.fetch("SELECT exercise FROM exercises WHERE user_id=$1", user_id)
         return [r['exercise'] for r in rows]
 
 async def add_exercise(user_id, exercise):
+    global pool
     async with db_pool.acquire() as conn:
         await conn.execute("INSERT INTO exercises (user_id, exercise) VALUES ($1, $2)", user_id, exercise)
 
@@ -140,6 +143,7 @@ async def save_record(user_id, exercise, sets, reps_list):
         )
 
 async def get_user_records(user_id):
+    global pool
     async with db_pool.acquire() as conn:
         rows = await conn.fetch(
             "SELECT exercise, sets, reps, date FROM records WHERE user_id=$1 ORDER BY date DESC LIMIT 10",
