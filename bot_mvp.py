@@ -119,7 +119,7 @@ async def start(message: types.Message, state: FSMContext = None):
         await state.clear()
 
 # ===== Добавить подход =====
-@dp.message(F.text == "➕ Добавить подход")
+@dp.message(lambda m: m.text == "➕ Добавить подход")
 async def start_add_approach(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     exercises = await get_exercises(user_id)
@@ -220,7 +220,7 @@ async def process_reps(message: types.Message, state: FSMContext):
     await state.clear()
 
 # ===== История =====
-@dp.message(F.text == "📜 История")
+@dp.message(lambda m: m.text == "📜 История")
 async def history(message: types.Message):
     user_id = message.from_user.id
     records = await get_user_records(user_id)
@@ -238,7 +238,7 @@ async def history(message: types.Message):
     await message.answer(msg_text, reply_markup=main_kb())
 
 # ===== Рестарт =====
-@dp.message(F.text == "🔄 Рестарт бота")
+@dp.message(lambda m: m.text == "🔄 Рестарт бота")
 async def restart_bot(message: types.Message):
     await start(message)
 
