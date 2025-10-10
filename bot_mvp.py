@@ -197,20 +197,20 @@ def exercises_kb(exercises: list[str]):
 # ===== Добавить подход =====
 # ===== Добавить подход =====
 # ===== Добавить подход =====
+# ===== Добавление подхода =====
 @dp.message(lambda m: m.text == "➕ Добавить подход")
 async def start_add_approach(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
-    exercises_raw = await get_exercises(user_id)
+    exercises = await get_exercises(user_id)  # возвращает список строк или []
 
-    # Фильтруем None и пустые строки
-    exercises = [ex for ex in exercises_raw if isinstance(ex, str) and ex.strip()]
+    # Фильтруем None
+    exercises = [ex for ex in exercises if ex]
 
-    # Кнопки
-    kb_buttons = [[KeyboardButton(text=ex)] for ex in exercises] if exercises else []
-    kb_buttons += [
-        [KeyboardButton(text="➕ Добавить новое упражнение")],
-        [KeyboardButton(text="↩ В меню")]
-    ]
+    kb_buttons = [[KeyboardButton(text=ex)] for ex in exercises] + \
+                 [[KeyboardButton(text="➕ Добавить новое упражнение")],
+                  [KeyboardButton(text="↩ В меню")]] \
+                 if exercises else [[KeyboardButton(text="➕ Добавить новое упражнение")],
+                                    [KeyboardButton(text="↩ В меню")]]
 
     kb = ReplyKeyboardMarkup(keyboard=kb_buttons, resize_keyboard=True, one_time_keyboard=True)
     await message.answer("Выберите упражнение или добавьте новое:", reply_markup=kb)
@@ -226,9 +226,7 @@ async def process_exercise(message: types.Message, state: FSMContext):
         await start(message, state)
         return
 
-    exercises_raw = await get_exercises(user_id)
-    exercises = [ex.lower() for ex in exercises_raw if isinstance(ex, str) and ex.strip()]
-
+    exercises = [ex.lower() for ex in await get_exercises(user_id) if ex]
     if text == "➕ Добавить новое упражнение":
         await message.answer("Введите название нового упражнения:")
         await state.set_state(AddApproachStates.waiting_for_new_exercise)
@@ -238,7 +236,28 @@ async def process_exercise(message: types.Message, state: FSMContext):
         return
 
     await state.update_data(exercise=text)
+    await ask_for_sets(message, state)
 
+
+@dp.message(AddApproachStates.waiting_for_new_exercise)
+async def add_new_exercise(message: types.Message, state: FSMContext):
+    text = message.text.strip()
+    user_id = message.from_user.id
+
+    if text == "↩ В меню":
+        await start(message, state)
+        return
+
+    # Добавляем упражнение в БД
+    await add_exercise(user_id, text)
+
+    await state.update_data(exercise=text)
+    await message.answer(f"✅ Упражнение '{text}' добавлено!")
+
+    await ask_for_sets(message, state)
+
+
+async def ask_for_sets(message: types.Message, state: FSMContext):
     kb = ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="1️⃣"), KeyboardButton(text="2️⃣"), KeyboardButton(text="3️⃣")],
@@ -251,7 +270,6 @@ async def process_exercise(message: types.Message, state: FSMContext):
     await state.set_state(AddApproachStates.waiting_for_sets)
 
 
-# ===== Обработчик выбора подходов =====
 @dp.message(AddApproachStates.waiting_for_sets)
 async def process_sets(message: types.Message, state: FSMContext):
     text = message.text.strip()
@@ -269,7 +287,7 @@ async def process_sets(message: types.Message, state: FSMContext):
     await message.answer(f"Введите количество повторений для каждого из {sets} подходов через пробел (например: 10 10 12):")
     await state.set_state(AddApproachStates.waiting_for_reps)
 
-# ===== Обработчик ввода повторений =====
+
 @dp.message(AddApproachStates.waiting_for_reps)
 async def process_reps(message: types.Message, state: FSMContext):
     text = message.text.strip()
