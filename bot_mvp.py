@@ -83,24 +83,36 @@ async def init_db():
                 date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+await conn.execute("ALTER TABLE records ADD COLUMN IF NOT EXISTS weight TEXT;")
 
 
 # ===== Функция вставки упражнения в БД с весом =====
-async def add_exercise_to_db(user_id, exercise_text, approach=None, reps=None, weight=None):
+async def add_exercise_to_db(user_id, exercise_text, approach=1, reps="", weights=None):
     """
-    Вставляет новое упражнение для пользователя в таблицу exercises.
+    Добавляет новое упражнение, если его ещё нет у пользователя.
+    weights: список весов для каждого подхода
     """
-    if not exercise_text or exercise_text.strip() == "":
-        return  # пустой текст игнорируем
-
     async with db_pool.acquire() as conn:
+        exists = await conn.fetchrow(
+            "SELECT id FROM exercises WHERE user_id=$1 AND exercise=$2",
+            user_id, exercise_text.strip()
+        )
+        if exists:
+            # Если упражнение уже есть, можно обновить reps и weights
+            await conn.execute(
+                "UPDATE exercises SET approach=$1, reps=$2, weight=$3 WHERE user_id=$4 AND exercise=$5",
+                approach, reps, " ".join(map(str, weights)) if weights else None, user_id, exercise_text.strip()
+            )
+            return
+
         await conn.execute(
             """
             INSERT INTO exercises (user_id, exercise, approach, reps, weight)
             VALUES ($1, $2, $3, $4, $5)
             """,
-            user_id, exercise_text.strip(), approach, reps, weight
+            user_id, exercise_text.strip(), approach, reps, " ".join(map(str, weights)) if weights else None
         )
+
 def parse_exercise_input(text: str):
     """
     Пример ввода: "Жим лежа 3 10 12 15 60"
@@ -179,12 +191,21 @@ async def add_exercise(user_id, exercise):
         )
 
 
-async def save_record(user_id, exercise, sets, reps_list):
+async def save_record(user_id, exercise, sets, reps_list, weights_list=None):
+    """
+    Сохраняет запись тренировки с повторениями и весами по подходам.
+    """
     reps_str = " ".join(map(str, reps_list))
+    weight_str = " ".join(map(str, weights_list)) if weights_list else None
+
+    # Если весов меньше, чем повторений, дублируем последний
+    if weights_list and len(weights_list) < len(reps_list):
+        weight_str = " ".join(map(str, weights_list + [weights_list[-1]] * (len(reps_list) - len(weights_list))))
+
     async with db_pool.acquire() as conn:
         await conn.execute(
-            "INSERT INTO records (user_id, exercise, sets, reps) VALUES ($1, $2, $3, $4)",
-            user_id, exercise, sets, reps_str
+            "INSERT INTO records (user_id, exercise, sets, reps, weight) VALUES ($1, $2, $3, $4, $5)",
+            user_id, exercise, sets, reps_str, weight_str
         )
 
 async def get_user_records(user_id):
@@ -370,44 +391,33 @@ async def process_reps(message: types.Message, state: FSMContext):
         await message.answer(f"❗ Вы должны ввести {sets} чисел.")
         return
 
+    # Сохраняем в state и спрашиваем веса
     await state.update_data(reps=reps)
-    await message.answer("Введите вес (в кг), например: 60")
+    await message.answer(f"Введите вес для каждого подхода через пробел (например: 60 70 80):")
     await state.set_state(AddApproachStates.waiting_for_weight)
-    
+
+
 @dp.message(AddApproachStates.waiting_for_weight)
 async def process_weight(message: types.Message, state: FSMContext):
     text = message.text.strip()
-    data = await state.get_data()
-    sets = data.get("sets")
-
-    # Разбираем список весов
     try:
-        weights = list(map(float, text.replace(",", ".").split()))
+        weights = list(map(float, text.split()))
     except ValueError:
-        await message.answer("❗ Введите веса через пробел, например: 60 70 80")
+        await message.answer("❗ Введите числа через пробел.")
         return
 
-    # Проверяем, что количество весов соответствует количеству подходов
-    if len(weights) != sets:
-        await message.answer(f"❗ Вы должны ввести {sets} значений веса.")
-        return
+    data = await state.get_data()
+    reps = data['reps']
+    sets = data['sets']
+    exercise = data['exercise']
 
-    exercise = data.get("exercise")
-    reps = data.get("reps")
+    # Если весов меньше, чем подходов, дублируем последний
+    while len(weights) < sets:
+        weights.append(weights[-1])
 
-    # Сохраняем в БД
-    reps_str = " ".join(map(str, reps))
-    weights_str = " ".join(map(str, weights))
-
-    await add_exercise_to_db(message.from_user.id, exercise, sets, reps_str, weights_str)
-    await save_record(message.from_user.id, exercise, sets, reps_str)
-
+    await save_record(message.from_user.id, exercise, sets, reps, weights)
     await message.answer(
-        f"✅ Записано:\n"
-        f"Упражнение: {exercise}\n"
-        f"Подходов: {sets}\n"
-        f"Повторения: {' '.join(map(str, reps))}\n"
-        f"Вес (кг): {' '.join(map(str, weights))}",
+        f"✅ Записано: {exercise} — подходы: {sets}, повторений: {reps}, вес: {weights}",
         reply_markup=main_kb()
     )
     await state.clear()
