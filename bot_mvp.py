@@ -373,84 +373,42 @@ async def history(message: types.Message):
     await message.answer(msg_text, reply_markup=main_kb())
 
 # ===== Обработчик кнопки 📈 Прогресс =====
+# ===== Обработчик кнопки 📈 Прогресс =====
 @dp.message(lambda m: m.text == "📈 Прогресс")
-async def progress_graph(message: types.Message):
+async def progress(message: types.Message):
     user_id = message.from_user.id
-    # Подключаемся к БД
-    conn = await asyncpg.connect(user="postgres", password="password", database="fitness", host="localhost")
-    try:
-        await show_progress(message, user_id, conn)
-    finally:
-        await conn.close()
+    await show_progress(message, user_id)
 # ===== Показ прогресса =====
-async def fetch_user_exercises(user_id: int, conn):
+async def show_progress(message: types.Message, user_id: int):
     """
-    Получаем все упражнения пользователя с датой, подходами и повторениями.
+    Показывает динамику подходов по упражнениям для пользователя.
     """
-    rows = await conn.fetch(
-        "SELECT exercise, date, sets, repetitions FROM exercises WHERE user_id=$1 ORDER BY date ASC",
-        user_id
-    )
-    data = {}
-    for row in rows:
-        ex = row["exercise"]
-        if ex not in data:
-            data[ex] = []
-        data[ex].append({
-            "date": row["date"].strftime("%d-%m-%Y"),
-            "sets": row["sets"],
-            "repetitions": row["repetitions"]
-        })
-    return data
-
-async def send_graph(message: types.Message, user_id: int, exercise_name: str, dates, sets, repetitions):
-    """
-    Строим и отправляем график одного упражнения
-    """
-    fig, ax = plt.subplots(figsize=(6, 3))
-    ax.bar(dates, sets, color="skyblue")
-    ax.set_title(f"Динамика подходов: {exercise_name}")
-    ax.set_ylabel("Подходы")
-    ax.set_xlabel("Дата")
-
-    # Подписи повторений
-    for i, rep in enumerate(repetitions):
-        ax.text(i, sets[i] + 0.1, rep, ha='center', fontsize=8)
-
-    filename = f"progress_{user_id}_{exercise_name}.png"
-    plt.tight_layout()
-    plt.savefig(filename, format='png', dpi=100)
-    plt.close(fig)
-
-    # безопасная отправка
-    for _ in range(3):
-        try:
-            photo = types.FSInputFile(filename)
-            await message.answer_photo(photo=photo)
-            break
-        except TelegramNetworkError:
-            await asyncio.sleep(2)
-    else:
-        await message.answer(f"Не удалось отправить график для {exercise_name}.")
-
-    if os.path.exists(filename):
-        os.remove(filename)
-
-async def show_progress(message: types.Message, user_id: int, conn):
-    """
-    Главная команда для пользователя: строим графики по всем упражнениям
-    """
-    data = await fetch_user_exercises(user_id, conn)
-
-    if not data:
-        await message.answer("Данные по упражнениям не найдены.")
+    records = await get_user_records(user_id)
+    if not records:
+        await message.answer("У вас пока нет записей.", reply_markup=main_kb())
         return
 
-    for exercise, logs in data.items():
-        dates = [log["date"] for log in logs]
-        sets = [log["sets"] for log in logs]
-        repetitions = [log["repetitions"] for log in logs]
-        await send_graph(message, user_id, exercise, dates, sets, repetitions)
+    # Сгруппируем записи по упражнениям
+    from collections import defaultdict
+    exercises_dict = defaultdict(list)
+
+    for r in records:
+        exercises_dict[r['exercise']].append(r)
+
+    msg_text = "📊 Динамика подходов по упражнениям:\n\n"
+
+    for exercise, recs in exercises_dict.items():
+        msg_text += f"{exercise}:\n"
+        for r in recs:
+            date_str = r['date'].strftime('%d-%m-%Y')
+            reps_list = r['reps'].split()
+            sets_count = r['sets']
+            # Визуализация подходов (по количеству подходов)
+            bars = "■" * sets_count
+            msg_text += f"{date_str}: {sets_count} подходов | {bars} | повторений: {'-'.join(reps_list)}\n"
+        msg_text += "-"*30 + "\n"
+
+    await message.answer(msg_text, reply_markup=main_kb())
 
 # ===== Рестарт =====
 @dp.message(lambda m: m.text == "🔄 Рестарт бота")
