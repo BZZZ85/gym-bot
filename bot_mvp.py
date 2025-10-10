@@ -13,7 +13,7 @@ from itertools import groupby
 import matplotlib.pyplot as plt
 import io
 from datetime import datetime
-from aiogram.types import InputFile
+from aiogram import types
 # Загружаем локальный .env только если он есть
 if os.path.exists("ton.env"):
     load_dotenv("ton.env")
@@ -413,8 +413,8 @@ async def show_progress_graph(message, user_id):
     buf.seek(0)
     plt.close()
 
-    # Создаём InputFile через from_buffer
-    photo = InputFile.from_buffer(buf, filename="progress.png")
+    # Создаём InputFile правильно
+    photo = types.InputFile(buf, filename="progress.png")
     await message.answer_photo(photo=photo)
 
 # ===== Рестарт =====
