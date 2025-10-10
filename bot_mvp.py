@@ -112,17 +112,15 @@ def parse_exercise_input(text: str):
     if len(parts) < 4:
         return None
 
-    weight = float(parts[-1])       # последний элемент — вес
-    approach = int(parts[-(len(parts)-1)])  # второй элемент — количество подходов
-    reps = " ".join(parts[-(len(parts)-2):-1])  # все элементы между подходами и весом
-    exercise_text = " ".join(parts[:-(len(parts)-2)])  # остальное — название
+    try:
+        weight = float(parts[-1])              # последний элемент — вес
+        approach = int(parts[-(len(parts)-2)]) # количество подходов
+        reps = " ".join(parts[-(len(parts)-2)+1:-1])  # все элементы между подходами и весом
+        exercise_text = " ".join(parts[:-(len(parts)-2)])  # название упражнения
+    except ValueError:
+        return None
 
-    return exercise_text, approach, reps, weight
-
-
-
-
-
+    return exercise_text, approach, reps, weigh
 
 # ===== FSM-хэндлер для добавления нового упражнения =====
 @dp.message(AddApproachStates.waiting_for_new_exercise)
@@ -267,17 +265,26 @@ def exercises_kb(exercises: list[str]):
 
 # ===== Добавление подхода =====
 @dp.message(lambda m: m.text.startswith("Добавить:"))
-async def new_exercise(message: types.Message):
+async def new_exercise(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     text = message.text.replace("Добавить:", "").strip()
     parsed = parse_exercise_input(text)
+
     if not parsed:
-        await message.answer("Неверный формат. Пример: Жим лежа 3 10 12 15 60")
+        await message.answer("❗ Неверный формат. Пример: Жим лежа 3 10 12 15 60")
         return
 
     exercise_text, approach, reps, weight = parsed
     await add_exercise_to_db(user_id, exercise_text, approach, reps, weight)
-    await message.answer(f"Добавлено: {exercise_text}, подходов: {approach}, повторений: {reps}, вес: {weight} кг")
+    await message.answer(
+        f"✅ Добавлено:\nУпражнение: {exercise_text}\nПодходов: {approach}\nПовторений: {reps}\nВес: {weight} кг"
+    )
+
+    # Получаем актуальный список упражнений
+    exercises = await get_exercises(user_id)
+    kb = exercises_kb(exercises)
+    await message.answer("Выберите упражнение или добавьте новое:", reply_markup=kb)
+    await state.set_state(AddApproachStates.waiting_for_exercise)
 
 
     # Фильтруем None
