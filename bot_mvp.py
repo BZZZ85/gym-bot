@@ -53,10 +53,17 @@ async def init_db():
     db_pool = await asyncpg.create_pool(DATABASE_URL)
 
     async with db_pool.acquire() as conn:
+        # ===== Таблица пользователей =====
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                user_id BIGINT PRIMARY KEY,
+                username TEXT
+            )
+        """)
+
         # ===== Таблица упражнений =====
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS exercises (
-                id SERIAL PRIMARY KEY,
                 user_id BIGINT REFERENCES users(user_id) ON DELETE CASCADE,
                 exercise TEXT,
                 approach INT,
@@ -66,16 +73,15 @@ async def init_db():
             )
         """)
 
-        # Удаляем старую колонку name, если она осталась
-        try:
-            await conn.execute("ALTER TABLE exercises DROP COLUMN IF EXISTS name;")
-        except Exception as e:
-            print("Ошибка при удалении колонки name:", e)
+        # Добавляем колонку id, если её нет
+        await conn.execute("""
+            ALTER TABLE exercises 
+            ADD COLUMN IF NOT EXISTS id SERIAL PRIMARY KEY;
+        """)
 
         # ===== Таблица записей тренировок =====
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS records (
-                id SERIAL PRIMARY KEY,
                 user_id BIGINT REFERENCES users(user_id) ON DELETE CASCADE,
                 exercise TEXT,
                 sets INT,
@@ -83,6 +89,13 @@ async def init_db():
                 date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
+        # Добавляем колонку weight, если её нет
+        await conn.execute("""
+            ALTER TABLE records 
+            ADD COLUMN IF NOT EXISTS weight TEXT;
+        """)
+
         await conn.execute("ALTER TABLE records ADD COLUMN IF NOT EXISTS weight TEXT;")
 
 
