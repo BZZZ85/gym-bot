@@ -196,11 +196,15 @@ async def save_record(user_id, exercise, sets, reps_list, weights_list=None):
     Сохраняет запись тренировки с повторениями и весами по подходам.
     """
     reps_str = " ".join(map(str, reps_list))
-    weight_str = " ".join(map(str, weights_list)) if weights_list else None
-
-    # Если весов меньше, чем повторений, дублируем последний
-    if weights_list and len(weights_list) < len(reps_list):
-        weight_str = " ".join(map(str, weights_list + [weights_list[-1]] * (len(reps_list) - len(weights_list))))
+    
+    # Если веса переданы
+    if weights_list:
+        # Если весов меньше чем повторов, дублируем последний
+        if len(weights_list) < len(reps_list):
+            weights_list = weights_list + [weights_list[-1]] * (len(reps_list) - len(weights_list))
+        weight_str = " ".join(map(str, weights_list))
+    else:
+        weight_str = None
 
     async with db_pool.acquire() as conn:
         await conn.execute(
@@ -432,14 +436,19 @@ async def history(message: types.Message):
     if not records:
         await message.answer("У вас пока нет записей.", reply_markup=main_kb())
         return
+
     msg_text = "📊 Последние тренировки:\n\n"
     for r in records:
         reps_list = r['reps'].split()
+        weights_list = r['weight'].split() if r.get('weight') else ['0'] * r['sets']
+        
         msg_text += f"{r['date'].strftime('%d-%m-%Y')} — {r['exercise']}:\n"
         for i in range(r['sets']):
             rep = reps_list[i] if i < len(reps_list) else reps_list[-1]
-            msg_text += f"{i+1}️⃣ {rep} повторений\n"
+            w = weights_list[i] if i < len(weights_list) else weights_list[-1]
+            msg_text += f"{i+1}️⃣ {rep} повторений | {w} кг\n"
         msg_text += "-"*20 + "\n"
+
     await message.answer(msg_text, reply_markup=main_kb())
 
 # ===== Обработчик кнопки 📈 Прогресс =====
@@ -461,63 +470,32 @@ async def show_progress_graph(message: types.Message, user_id: int):
         exercises_dict[r['exercise']].append(r)
 
     for exercise, recs in exercises_dict.items():
-        dates, avg_weights, volumes = [], [], []
-        report_text = f"🏋️ Прогресс: {exercise}\n\n"
+        dates = [r['date'].strftime('%d-%m-%Y') for r in recs]
+        sets_counts = [r['sets'] for r in recs]
+        reps_lists = [r['reps'].split() for r in recs]
+        weights_lists = [r['weight'].split() if r.get('weight') else ['0']*r['sets'] for r in recs]
 
-        for r in recs:
-            date_str = r['date'].strftime('%d-%m-%Y')
-            dates.append(date_str)
+        fig, ax = plt.subplots(figsize=(6, 3))
+        ax.bar(dates, sets_counts, color="skyblue")
+        ax.set_title(f"Динамика подходов: {exercise}")
+        ax.set_ylabel("Подходы")
+        ax.set_xlabel("Дата")
 
-            # --- Парсим повторения и веса ---
-            reps = [int(x) for x in r['reps'].split()] if r['reps'] else []
-            weights = []
-            if 'weight' in r and r['weight']:
-                try:
-                    weights = [float(x) for x in r['weight'].split()]
-                except ValueError:
-                    weights = []
-
-            # Если весов меньше, чем повторений — дублируем последний
-            while len(weights) < len(reps):
-                weights.append(weights[-1] if weights else 0)
-
-            # Средний вес и общий тоннаж
-            avg_weight = round(sum(weights) / len(weights), 1) if weights else 0
-            volume = sum(w * r_ for w, r_ in zip(weights, reps))
-
-            avg_weights.append(avg_weight)
-            volumes.append(volume)
-
-            # --- Текстовый отчёт ---
-            report_text += (
-                f"{date_str} — подходы: {r['sets']} | "
-                f"повторений: {'-'.join(map(str, reps))} | "
-                f"вес(кг): {'-'.join(map(str, weights))} | "
-                f"тоннаж: {volume} кг\n"
-            )
-
-        # --- Рисуем график ---
-        fig, ax1 = plt.subplots(figsize=(6, 3))
-        ax1.plot(dates, avg_weights, color="orange", marker="o", label="Средний вес (кг)")
-        ax1.set_xlabel("Дата")
-        ax1.set_ylabel("Вес (кг)", color="orange")
-
-        ax2 = ax1.twinx()
-        ax2.bar(dates, volumes, color="skyblue", alpha=0.6, label="Общий тоннаж (кг)")
-        ax2.set_ylabel("Тоннаж (кг)", color="blue")
-
-        fig.suptitle(f"{exercise}")
-        fig.legend(loc="upper left", bbox_to_anchor=(0.1, 0.9))
-        plt.xticks(rotation=30, ha='right')
-        plt.tight_layout()
+        # Подписи повторений и веса на графике
+        for idx, r in enumerate(recs):
+            for i in range(r['sets']):
+                rep = reps_lists[idx][i] if i < len(reps_lists[idx]) else reps_lists[idx][-1]
+                w = weights_lists[idx][i] if i < len(weights_lists[idx]) else weights_lists[idx][-1]
+                ax.text(idx, sets_counts[idx]+0.1, f"{rep} ({w} кг)", ha='center', fontsize=8)
 
         filename = f"progress_{user_id}_{exercise}.png"
-        plt.savefig(filename, format='png', dpi=120)
+        plt.tight_layout()
+        plt.savefig(filename, format='png', dpi=100)
         plt.close(fig)
 
-        # --- Отправка фото с текстом ---
+        # Отправка фото
         try:
-            await message.answer_photo(FSInputFile(filename), caption=report_text)
+            await message.answer_photo(FSInputFile(filename))
         except Exception as e:
             await message.answer(f"Не удалось отправить график для {exercise}: {e}")
 
