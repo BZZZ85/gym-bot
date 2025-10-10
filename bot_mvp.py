@@ -45,7 +45,7 @@ async def init_db():
     db_pool = await asyncpg.create_pool(DATABASE_URL)
 
     async with db_pool.acquire() as conn:
-        # Таблица пользователей (если её нет)
+        # ===== Создание таблицы users, если её нет =====
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 user_id BIGINT PRIMARY KEY,
@@ -53,7 +53,7 @@ async def init_db():
             )
         """)
 
-        # Таблица упражнений
+        # ===== Создание таблицы exercises =====
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS exercises (
                 id SERIAL PRIMARY KEY,
@@ -66,7 +66,16 @@ async def init_db():
             )
         """)
 
-        # Таблица записей тренировок
+        # Проверяем, есть ли колонка name (устаревшая) и удаляем её
+        column_check = await conn.fetchrow("""
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name='exercises' AND column_name='name';
+        """)
+        if column_check:
+            await conn.execute("ALTER TABLE exercises RENAME COLUMN name TO exercise;")
+            await conn.execute("ALTER TABLE exercises ALTER COLUMN exercise DROP NOT NULL;")
+
+        # ===== Создание таблицы records =====
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS records (
                 id SERIAL PRIMARY KEY,
