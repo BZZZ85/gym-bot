@@ -114,12 +114,16 @@ def main_kb():
 
 # ===== Работа с БД =====
 async def add_user(user_id, username):
-     global pool
+    global pool  # используем глобальный пул соединений
     async with pool.acquire() as conn:
         await conn.execute(
-            "INSERT INTO users (user_id, username) VALUES ($1, $2) ON CONFLICT (user_id) DO NOTHING",
+            """
+            INSERT INTO users (user_id, username)
+            VALUES ($1, $2)
+            ON CONFLICT (user_id) DO NOTHING
+            """,
             user_id,
-            username,
+            username
         )
 
 
