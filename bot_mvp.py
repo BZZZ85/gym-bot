@@ -216,10 +216,11 @@ async def get_user_records(user_id):
     global db_pool
     async with db_pool.acquire() as conn:
         rows = await conn.fetch(
-            "SELECT exercise, sets, reps, date FROM records WHERE user_id=$1 ORDER BY date DESC LIMIT 10",
+            "SELECT exercise, sets, reps, weight, date FROM records WHERE user_id=$1 ORDER BY date DESC LIMIT 10",
             user_id
         )
         return rows
+
 
 # ===== Обработчики =====
 @dp.message(CommandStart())
