@@ -50,15 +50,15 @@ async def init_db():
 
         # Таблица упражнений
         await conn.execute("""
-            CREATE TABLE IF NOT EXISTS exercises (
+           CREATE TABLE IF NOT EXISTS exercises (
                 id SERIAL PRIMARY KEY,
                 user_id BIGINT REFERENCES users(user_id) ON DELETE CASCADE,
-                exercise TEXT,
+                exercise TEXT NOT NULL,
                 approach INT,
                 reps TEXT,
                 weight TEXT,
                 created_at TIMESTAMP DEFAULT now()
-            )
+);
         """)
 
         # Таблица упражнений (без колонок, которые могут добавляться позже)
@@ -134,9 +134,14 @@ async def get_exercises(user_id):
         return [r['exercise'] for r in rows]
 
 async def add_exercise(user_id, exercise):
-    global db_pool
+    async def add_exercise(user_id, exercise):
     async with db_pool.acquire() as conn:
-        await conn.execute("INSERT INTO exercises (user_id, exercise) VALUES ($1, $2)", user_id, exercise)
+        await conn.execute(
+            "INSERT INTO exercises (user_id, exercise) VALUES ($1, $2)",
+            user_id,
+            exercise
+        )
+
 
 async def save_record(user_id, exercise, sets, reps_list):
     reps_str = " ".join(map(str, reps_list))
