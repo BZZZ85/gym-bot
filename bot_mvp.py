@@ -17,10 +17,6 @@ if not DATABASE_URL:
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-async def get_db_pool():
-    return await asyncpg.create_pool(DATABASE_URL)
-
-db_pool = asyncio.run(get_db_pool())
 
 # Клавиатура
 def main_kb():
@@ -32,22 +28,24 @@ def main_kb():
         resize_keyboard=True
     )
 
+
 # Таблица пользователей
-async def create_tables():
-    async with db_pool.acquire() as conn:
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                user_id BIGINT PRIMARY KEY,
-                username TEXT
-            )
-        """)
+async def create_tables(conn):
+    await conn.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            user_id BIGINT PRIMARY KEY,
+            username TEXT
+        )
+    """)
+
 
 # Команда /start
 @dp.message()
 async def start(message: types.Message):
-    async with db_pool.acquire() as conn:
+    async with message.bot.get("db_pool").acquire() as conn:
         await conn.execute(
-            "INSERT INTO users (user_id, username) VALUES ($1, $2) ON CONFLICT (user_id) DO NOTHING",
+            "INSERT INTO users (user_id, username) VALUES ($1, $2) "
+            "ON CONFLICT (user_id) DO NOTHING",
             message.from_user.id, message.from_user.username
         )
     await message.answer(
@@ -55,10 +53,22 @@ async def start(message: types.Message):
         reply_markup=main_kb()
     )
 
+
 # Основной запуск
 async def main():
-    await create_tables()
+    # Подключаем базу
+    db_pool = await asyncpg.create_pool(DATABASE_URL)
+
+    # Создаём таблицы
+    async with db_pool.acquire() as conn:
+        await create_tables(conn)
+
+    # Передаём пул подключений в диспетчер
+    dp["db_pool"] = db_pool
+
+    print("✅ Бот запущен и подключён к БД")
     await dp.start_polling(bot)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
