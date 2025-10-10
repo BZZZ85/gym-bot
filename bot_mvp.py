@@ -482,14 +482,15 @@ async def progress(message: types.Message, state: FSMContext):
     if not exercises:
         await message.answer("У вас пока нет упражнений.", reply_markup=main_kb())
         return
-    if ex and isinstance(ex, str)
+    
 
     kb = ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text=ex)] for ex in exercises] +
-                 [[KeyboardButton(text="↩ В меню")]],
-        resize_keyboard=True,
-        one_time_keyboard=True
-    )
+    keyboard=[[KeyboardButton(text=ex)] for ex in exercises if ex and isinstance(ex, str)] +
+             [[KeyboardButton(text="↩ В меню")]],
+    resize_keyboard=True,
+    one_time_keyboard=True
+)
+
     await message.answer("Выберите упражнение для просмотра прогресса:", reply_markup=kb)
     await state.set_state(ProgressStates.waiting_for_exercise)
 
