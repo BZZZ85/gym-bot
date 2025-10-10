@@ -13,6 +13,7 @@ from itertools import groupby
 import matplotlib.pyplot as plt
 import io
 from datetime import datetime
+from aiogram.types import InputFile
 # Загружаем локальный .env только если он есть
 if os.path.exists("ton.env"):
     load_dotenv("ton.env")
@@ -377,40 +378,44 @@ async def progress_graph(message: types.Message):
     user_id = message.from_user.id
     await show_progress_graph(message, user_id)
 # ===== Показ прогресса =====
-async def show_progress_graph(message: types.Message, user_id: int):
+async def show_progress_graph(message, user_id):
+    # Получаем все записи пользователя
     records = await get_user_records(user_id)
     if not records:
-        await message.answer("У вас пока нет записей.", reply_markup=main_kb())
+        await message.answer("У вас пока нет записей для построения графика.", reply_markup=main_kb())
         return
 
-    from collections import defaultdict
-    exercises_dict = defaultdict(list)
+    # Сгруппируем по упражнениям
+    exercises_data = {}
     for r in records:
-        exercises_dict[r['exercise']].append(r)
+        exercise = r['exercise']
+        date = r['date'].strftime("%d-%m-%Y")
+        reps_list = list(map(int, r['reps'].split()))
+        total_reps = sum(reps_list)
+        exercises_data.setdefault(exercise, []).append((date, total_reps))
 
-    for exercise, recs in exercises_dict.items():
-        dates = [r['date'] for r in recs]
-        sets_list = [r['sets'] for r in recs]
-        # Для графика возьмем среднее число повторений
-        avg_reps = [sum(map(int, r['reps'].split())) / r['sets'] for r in recs]
+    # Строим график
+    plt.figure(figsize=(8, 4))
+    for exercise, data_points in exercises_data.items():
+        dates = [d for d, _ in data_points]
+        totals = [t for _, t in data_points]
+        plt.plot(dates, totals, marker='o', label=exercise)
 
-        plt.figure(figsize=(8, 4))
-        plt.plot(dates, sets_list, marker='o', label='Подходы')
-        plt.plot(dates, avg_reps, marker='x', label='Средние повторения')
-        plt.title(f"Прогресс: {exercise}")
-        plt.xlabel("Дата")
-        plt.ylabel("Количество")
-        plt.xticks(rotation=45)
-        plt.grid(True)
-        plt.legend()
-        plt.tight_layout()
+    plt.title("Прогресс по упражнениям")
+    plt.xlabel("Дата")
+    plt.ylabel("Суммарное количество повторений")
+    plt.xticks(rotation=45)
+    plt.legend()
+    plt.tight_layout()
 
-        # Сохраняем график в байты и отправляем в Telegram
-        buf = io.BytesIO()
-        plt.savefig(buf, format='png')
-        buf.seek(0)
-        plt.close()
-        await message.answer_photo(photo=buf)
+    # Сохраняем график в BytesIO и отправляем
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    buf.seek(0)
+    plt.close()
+
+    photo = InputFile(buf, filename="progress.png")
+    await message.answer_photo(photo=photo)
 
 # ===== Рестарт =====
 @dp.message(lambda m: m.text == "🔄 Рестарт бота")
