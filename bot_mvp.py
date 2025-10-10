@@ -53,7 +53,7 @@ async def init_db():
             )
         """)
 
-        # ===== Создание таблицы exercises =====
+        # ===== Создание таблицы exercises, если её нет =====
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS exercises (
                 id SERIAL PRIMARY KEY,
@@ -66,12 +66,17 @@ async def init_db():
             )
         """)
 
-        # Проверяем, есть ли колонка name (устаревшая) и удаляем её
-        column_check = await conn.fetchrow("""
+        # ===== Проверяем старую колонку name =====
+        name_column = await conn.fetchrow("""
             SELECT column_name FROM information_schema.columns
             WHERE table_name='exercises' AND column_name='name';
         """)
-        if column_check:
+        exercise_column = await conn.fetchrow("""
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name='exercises' AND column_name='exercise';
+        """)
+
+        if name_column and not exercise_column:
             await conn.execute("ALTER TABLE exercises RENAME COLUMN name TO exercise;")
             await conn.execute("ALTER TABLE exercises ALTER COLUMN exercise DROP NOT NULL;")
 
@@ -86,6 +91,7 @@ async def init_db():
                 date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
 
 
 # ===== Функция вставки упражнения в БД =====
