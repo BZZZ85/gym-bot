@@ -65,24 +65,6 @@ async def init_db():
                 date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-async def main():
-    await init_db()  # инициализация db_pool и users
-    await create_exercises_table()  # создаём таблицу exercises
-    await dp.start_polling(bot)
-        # Создание таблицы exercises
-async def create_exercises_table():
-    async with db_pool.acquire() as conn:
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS exercises (
-                id SERIAL PRIMARY KEY,
-                user_id BIGINT REFERENCES users(user_id) ON DELETE CASCADE,
-                exercise TEXT NOT NULL,
-                approach INT,
-                reps TEXT,
-                weight TEXT,
-                created_at TIMESTAMP DEFAULT now()
-            )
-        """)
 
 # ===== Главное меню =====
 def main_kb():
