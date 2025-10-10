@@ -134,7 +134,6 @@ async def get_exercises(user_id):
         return [r['exercise'] for r in rows]
 
 async def add_exercise(user_id, exercise):
-    async def add_exercise(user_id, exercise):
     async with db_pool.acquire() as conn:
         await conn.execute(
             "INSERT INTO exercises (user_id, exercise) VALUES ($1, $2)",
