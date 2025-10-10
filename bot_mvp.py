@@ -35,9 +35,10 @@ class AddApproachStates(StatesGroup):
     waiting_for_reps = State()
 
 # ===== Подключение к БД =====
-async def init_db():
+aasync def main():
     global db_pool
     db_pool = await asyncpg.create_pool(DATABASE_URL)
+
     async with db_pool.acquire() as conn:
         # Таблица пользователей
         await conn.execute("""
@@ -51,10 +52,14 @@ async def init_db():
             CREATE TABLE IF NOT EXISTS exercises (
                 id SERIAL PRIMARY KEY,
                 user_id BIGINT REFERENCES users(user_id) ON DELETE CASCADE,
-                exercise TEXT
+                exercise TEXT NOT NULL,
+                approach INT,
+                reps TEXT,
+                weight TEXT,
+                created_at TIMESTAMP DEFAULT now()
             )
         """)
-        # Таблица записей тренировок
+        # Таблица записей
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS records (
                 id SERIAL PRIMARY KEY,
@@ -65,6 +70,8 @@ async def init_db():
                 date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
+    await dp.start_polling(bot)
 
 # ===== Главное меню =====
 def main_kb():
