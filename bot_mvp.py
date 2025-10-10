@@ -473,7 +473,7 @@ from aiogram.fsm.state import State, StatesGroup
 class ProgressStates(StatesGroup):
     waiting_for_exercise = State()
 
-# ===== Обработчик кнопки "📈 Прогресс" =====
+# ===== Обработчик кнопки 📈 Прогресс =====
 @dp.message(lambda m: m.text == "📈 Прогресс")
 async def progress(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
@@ -482,96 +482,102 @@ async def progress(message: types.Message, state: FSMContext):
     if not exercises:
         await message.answer("У вас пока нет упражнений.", reply_markup=main_kb())
         return
-    
 
-    kb = ReplyKeyboardMarkup(
-    keyboard=[[KeyboardButton(text=ex)] for ex in exercises if ex and isinstance(ex, str)] +
-             [[KeyboardButton(text="↩ В меню")]],
-    resize_keyboard=True,
-    one_time_keyboard=True
-)
+    # Формируем клавиатуру с упражнениями
+    kb_buttons = [[KeyboardButton(text=ex)] for ex in exercises if ex]
+    kb_buttons.append([KeyboardButton(text="↩ В меню")])
+    kb = ReplyKeyboardMarkup(keyboard=kb_buttons, resize_keyboard=True, one_time_keyboard=True)
 
-    await message.answer("Выберите упражнение для просмотра прогресса:", reply_markup=kb)
-    await state.set_state(ProgressStates.waiting_for_exercise)
+    await message.answer("Выберите упражнение для отображения прогресса:", reply_markup=kb)
+    await state.set_state(ShowProgressStates.waiting_for_exercise)
+
+
+# ===== FSM для выбора упражнения =====
+class ShowProgressStates(StatesGroup):
+    waiting_for_exercise = State()
+
 
 # ===== Обработчик выбора упражнения =====
-@dp.message(ProgressStates.waiting_for_exercise)
-async def progress_select_exercise(message: types.Message, state: FSMContext):
+@dp.message(ShowProgressStates.waiting_for_exercise)
+async def show_selected_progress(message: types.Message, state: FSMContext):
     text = message.text.strip()
-
     if text == "↩ В меню":
         await start(message, state)
         return
 
     user_id = message.from_user.id
-    exercises = await get_exercises(user_id)
-
-    if text not in exercises:
-        await message.answer("❗ Выберите упражнение из списка.")
+    records = await get_user_records(user_id)
+    if not records:
+        await message.answer("У вас пока нет записей.", reply_markup=main_kb())
+        await state.clear()
         return
 
-    await show_progress_graph(message, user_id, exercise=text)
+    # Фильтруем записи по выбранному упражнению
+    selected_records = [r for r in records if r['exercise'] == text]
+    if not selected_records:
+        await message.answer("Нет записей по выбранному упражнению.", reply_markup=main_kb())
+        await state.clear()
+        return
+
+    await show_progress_graph_for_exercise(message, text, selected_records)
     await state.clear()
 
-# ===== Построение графика без тоннажа =====
-async def show_progress_graph(message: types.Message, user_id: int, exercise: str):
-    records = await get_user_records(user_id)
-    records = [r for r in records if r['exercise'] == exercise]
 
-    if not records:
-        await message.answer(f"Записей для упражнения '{exercise}' пока нет.", reply_markup=main_kb())
-        return
-
-    dates, sets_list, reps_text_list, weights_text_list = [], [], [], []
+# ===== Новая функция для одного упражнения =====
+async def show_progress_graph_for_exercise(message: types.Message, exercise: str, recs: list):
+    dates, avg_weights = [], []
     report_text = f"🏋️ Прогресс: {exercise}\n\n"
 
-    for r in records:
+    for r in recs:
         date_str = r['date'].strftime('%d-%m-%Y')
         dates.append(date_str)
-        sets = r['sets']
-        reps = [int(x) for x in r['reps'].split()] if r['reps'] else [0]*sets
-        weights = [float(x) for x in r['weight'].split()] if r.get('weight') else [0]*sets
 
-        while len(weights) < sets:
+        # Парсим повторения
+        reps = [int(x) for x in r['reps'].split()] if r['reps'] else []
+
+        # Парсим веса
+        weights = []
+        if r.get('weight'):
+            try:
+                weights = [float(x) for x in r['weight'].split()]
+            except ValueError:
+                weights = []
+
+        # Дублируем последний вес, если их меньше повторений
+        while len(weights) < len(reps):
             weights.append(weights[-1] if weights else 0)
-        while len(reps) < sets:
-            reps.append(reps[-1] if reps else 0)
 
-        sets_list.append(sets)
-        reps_text_list.append("-".join(map(str, reps)))
-        weights_text_list.append("-".join(map(str, weights)))
+        # Средний вес
+        avg_weight = round(sum(weights) / len(weights), 1) if weights else 0
+        avg_weights.append(avg_weight)
 
-        report_text += (
-            f"{date_str} — подходы: {sets} | "
-            f"повторений: {'-'.join(map(str, reps))} | "
-            f"вес(кг): {'-'.join(map(str, weights))}\n"
-        )
+        # Формируем текстовый отчёт
+        reps_str = "-".join(map(str, reps)) if reps else "0"
+        weights_str = "-".join(map(str, weights)) if weights else "0"
+        report_text += f"{date_str} — подходы: {r['sets']} | повторений: {reps_str} | вес(кг): {weights_str}\n"
 
-    # --- График ---
-    fig, ax = plt.subplots(figsize=(6, 3))
-    ax.bar(dates, sets_list, color="skyblue")
+    # Строим график
+    fig, ax = plt.subplots(figsize=(8, 4), constrained_layout=True)
+    ax.plot(dates, avg_weights, color="orange", marker="o", label="Средний вес (кг)")
     ax.set_xlabel("Дата")
-    ax.set_ylabel("Подходы")
+    ax.set_ylabel("Вес (кг)", color="orange")
+    ax.tick_params(axis='y', labelcolor="orange")
+    plt.xticks(rotation=45, ha='right')
     ax.set_title(f"Прогресс: {exercise}")
+    ax.legend(loc="upper left")
 
-    for i in range(len(dates)):
-        ax.text(i, sets_list[i]+0.1, f"{reps_text_list[i]}\n{weights_text_list[i]} кг",
-                ha='center', fontsize=8)
-
-    plt.xticks(rotation=30, ha='right')
-    plt.tight_layout()
-
-    filename = f"progress_{user_id}_{exercise}.png"
+    filename = f"progress_{message.from_user.id}_{exercise}.png"
     plt.savefig(filename, format='png', dpi=120)
     plt.close(fig)
 
     try:
-        await message.answer_photo(FSInputFile(filename), caption=report_text)
+        await message.answer_photo(FSInputFile(filename), caption=report_text, reply_markup=main_kb())
     except Exception as e:
-        await message.answer(f"Не удалось отправить график: {e}")
+        await message.answer(f"Не удалось отправить график для {exercise}: {e}")
 
     if os.path.exists(filename):
         os.remove(filename)
+
 
 
 #статистика
