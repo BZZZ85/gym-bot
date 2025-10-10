@@ -208,8 +208,8 @@ async def start_add_approach(message: types.Message, state: FSMContext):
     # Формируем клавиатуру
     kb_buttons = [[KeyboardButton(text=ex)] for ex in exercises] if exercises else []
     kb_buttons += [
-        [KeyboardButton("➕ Добавить новое упражнение")],
-        [KeyboardButton("↩ В меню")]
+        [KeyboardButton(text="➕ Добавить новое упражнение")],
+        [KeyboardButton(text="↩ В меню")]
     ]
 
     kb = ReplyKeyboardMarkup(keyboard=kb_buttons, resize_keyboard=True, one_time_keyboard=True)
