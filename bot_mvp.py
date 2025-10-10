@@ -34,6 +34,57 @@ class AddApproachStates(StatesGroup):
     waiting_for_sets = State()
     waiting_for_reps = State()
 
+# ===== Подключение к БД =====
+async def init_db():
+    global db_pool
+    db_pool = await asyncpg.create_pool(DATABASE_URL)
+
+    async with db_pool.acquire() as conn:
+        # Таблица пользователей
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                user_id BIGINT PRIMARY KEY,
+                username TEXT
+            )
+        """)
+
+        # Таблица упражнений (без колонок, которые могут добавляться позже)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS exercises (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT REFERENCES users(user_id) ON DELETE CASCADE
+            )
+        """)
+
+        # Проверяем и добавляем колонки, если их нет
+        columns = await conn.fetch("""
+            SELECT column_name FROM information_schema.columns 
+            WHERE table_name='exercises'
+        """)
+        column_names = [c['column_name'] for c in columns]
+
+        if 'exercise' not in column_names:
+            await conn.execute("ALTER TABLE exercises ADD COLUMN exercise TEXT;")
+        if 'approach' not in column_names:
+            await conn.execute("ALTER TABLE exercises ADD COLUMN approach INT;")
+        if 'reps' not in column_names:
+            await conn.execute("ALTER TABLE exercises ADD COLUMN reps TEXT;")
+        if 'weight' not in column_names:
+            await conn.execute("ALTER TABLE exercises ADD COLUMN weight TEXT;")
+        if 'created_at' not in column_names:
+            await conn.execute("ALTER TABLE exercises ADD COLUMN created_at TIMESTAMP DEFAULT now();")
+
+        # Таблица записей тренировок
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS records (
+                id SERIAL PRIMARY KEY,
+                user_id BIGINT REFERENCES users(user_id) ON DELETE CASCADE,
+                exercise TEXT,
+                sets INT,
+                reps TEXT,
+                date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
 
 
 # ===== Главное меню =====
