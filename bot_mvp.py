@@ -37,11 +37,18 @@ async def init_db():
         """)
 
 # Клавиатура меню
+# Клавиатура меню
 def main_kb():
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton("📜 История"), KeyboardButton("📈 Прогресс")],
-            [KeyboardButton("📊 Статистика"), KeyboardButton("⚙️ Настройки")]
+            [
+                KeyboardButton(text="📜 История"),
+                KeyboardButton(text="📈 Прогресс")
+            ],
+            [
+                KeyboardButton(text="📊 Статистика"),
+                KeyboardButton(text="⚙️ Настройки")
+            ]
         ],
         resize_keyboard=True
     )
