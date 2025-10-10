@@ -10,7 +10,9 @@ from dotenv import load_dotenv
 from collections import defaultdict
 from datetime import datetime
 from itertools import groupby
-
+import matplotlib.pyplot as plt
+import io
+from datetime import datetime
 # Загружаем локальный .env только если он есть
 if os.path.exists("ton.env"):
     load_dotenv("ton.env")
@@ -371,42 +373,44 @@ async def history(message: types.Message):
 
 # ===== Обработчик кнопки 📈 Прогресс =====
 @dp.message(lambda m: m.text == "📈 Прогресс")
-async def progress(message: types.Message):
+async def progress_graph(message: types.Message):
     user_id = message.from_user.id
-    await show_progress(message, user_id)
-@dp.message(lambda m: m.text == "📈 Прогресс")
+    await show_progress_graph(message, user_id)
 # ===== Показ прогресса =====
-async def show_progress(message: types.Message, user_id: int):
-    """
-    Показывает динамику подходов по упражнениям для пользователя.
-    """
+async def show_progress_graph(message: types.Message, user_id: int):
     records = await get_user_records(user_id)
     if not records:
         await message.answer("У вас пока нет записей.", reply_markup=main_kb())
         return
 
-    # Сгруппируем записи по упражнениям
     from collections import defaultdict
     exercises_dict = defaultdict(list)
-
     for r in records:
         exercises_dict[r['exercise']].append(r)
 
-    msg_text = "📊 Динамика подходов по упражнениям:\n\n"
-
     for exercise, recs in exercises_dict.items():
-        msg_text += f"{exercise}:\n"
-        for r in recs:
-            date_str = r['date'].strftime('%d-%m-%Y')
-            reps_list = r['reps'].split()
-            sets_count = r['sets']
-            # Визуализация подходов (по количеству подходов)
-            bars = "■" * sets_count
-            msg_text += f"{date_str}: {sets_count} подходов | {bars} | повторений: {'-'.join(reps_list)}\n"
-        msg_text += "-"*30 + "\n"
+        dates = [r['date'] for r in recs]
+        sets_list = [r['sets'] for r in recs]
+        # Для графика возьмем среднее число повторений
+        avg_reps = [sum(map(int, r['reps'].split())) / r['sets'] for r in recs]
 
-    await message.answer(msg_text, reply_markup=main_kb())
+        plt.figure(figsize=(8, 4))
+        plt.plot(dates, sets_list, marker='o', label='Подходы')
+        plt.plot(dates, avg_reps, marker='x', label='Средние повторения')
+        plt.title(f"Прогресс: {exercise}")
+        plt.xlabel("Дата")
+        plt.ylabel("Количество")
+        plt.xticks(rotation=45)
+        plt.grid(True)
+        plt.legend()
+        plt.tight_layout()
 
+        # Сохраняем график в байты и отправляем в Telegram
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png')
+        buf.seek(0)
+        plt.close()
+        await message.answer_photo(photo=buf)
 
 # ===== Рестарт =====
 @dp.message(lambda m: m.text == "🔄 Рестарт бота")
