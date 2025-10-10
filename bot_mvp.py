@@ -44,7 +44,8 @@ class AddApproachStates(StatesGroup):
     waiting_for_sets = State()
     waiting_for_reps = State()
     waiting_for_weight = State() 
-
+class DeleteExerciseStates(StatesGroup):
+    waiting_for_exercise_to_delete = State()
 # ===== Подключение к БД =====
 
 # ===== Подключение к БД и инициализация таблиц =====
@@ -167,7 +168,7 @@ def main_kb():
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📜 История"), KeyboardButton(text="📈 Прогресс"), KeyboardButton(text="📊 Статистика")],
-            [KeyboardButton(text="➕ Добавить подход")],
+            [KeyboardButton(text="➕ Добавить подход"), KeyboardButton(text="🗑 Удалить упражнение")],
             [KeyboardButton(text="⏰ Напоминания"), KeyboardButton(text="🔄 Рестарт бота")]
         ],
         resize_keyboard=True
@@ -256,7 +257,17 @@ def sets_kb():
         resize_keyboard=True,
         one_time_keyboard=True
     )
-
+# ===== Функция удаления упражнения из БД =====
+async def delete_exercise_from_db(user_id: int, exercise: str):
+    """
+    Удаляет упражнение пользователя из таблицы exercises.
+    """
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            "DELETE FROM exercises WHERE user_id=$1 AND exercise=$2",
+            user_id,
+            exercise
+        )
 
 # ===== Добавить подход =====
 # ===== Функция для клавиатуры с упражнениями =====
@@ -440,7 +451,43 @@ async def process_weight(message: types.Message, state: FSMContext):
     )
     await state.clear()
 
+# ===== Обработчик кнопки "Удалить упражнение" =====
+# ===== Обработчик кнопки "Удалить упражнение" =====
+@dp.message(lambda m: m.text == "🗑 Удалить упражнение")
+async def choose_exercise_to_delete(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    exercises = await get_exercises(user_id)
+    
+    if not exercises:
+        await message.answer("У вас пока нет упражнений для удаления.", reply_markup=main_kb())
+        return
 
+    kb_buttons = [[KeyboardButton(text=ex)] for ex in exercises]
+    kb_buttons.append([KeyboardButton(text="↩ В меню")])
+    kb = ReplyKeyboardMarkup(keyboard=kb_buttons, resize_keyboard=True, one_time_keyboard=True)
+
+    await message.answer("Выберите упражнение для удаления:", reply_markup=kb)
+    await state.set_state(DeleteExerciseStates.waiting_for_exercise_to_delete)
+
+# ===== Обработка выбора упражнения для удаления =====
+@dp.message(DeleteExerciseStates.waiting_for_exercise_to_delete)
+async def process_exercise_deletion(message: types.Message, state: FSMContext):
+    text = message.text.strip()
+    user_id = message.from_user.id
+
+    if text == "↩ В меню":
+        await start(message, state)
+        return
+
+    exercises = await get_exercises(user_id)
+    if text not in exercises:
+        await message.answer("❗ Выберите упражнение из списка.")
+        return
+
+    # Удаляем упражнение
+    await delete_exercise_from_db(user_id, text)
+    await message.answer(f"✅ Упражнение '{text}' удалено.", reply_markup=main_kb())
+    await state.clear()
 
 # ===== История =====
 @dp.message(lambda m: m.text == "📜 История")
