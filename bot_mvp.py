@@ -3,15 +3,18 @@ import asyncio
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
 import asyncpg
+from dotenv import load_dotenv
 
-# Загружаем переменные окружения из Railway Variables
+# Загружаем конкретный файл .env
+load_dotenv("ton.env")
+
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not BOT_TOKEN:
-    raise ValueError("❌ BOT_TOKEN не найден. Проверь Variables в Railway.")
+    raise ValueError("❌ BOT_TOKEN не найден. Проверь ton.env или Variables в Railway.")
 if not DATABASE_URL:
-    raise ValueError("❌ DATABASE_URL не найден. Проверь Variables в Railway.")
+    raise ValueError("❌ DATABASE_URL не найден. Проверь ton.env или Variables в Railway.")
 
 # Инициализация бота и диспетчера
 bot = Bot(token=BOT_TOKEN)
