@@ -176,13 +176,34 @@ def exercises_kb(exercises: list[str]):
     return ReplyKeyboardMarkup(keyboard=kb_buttons, resize_keyboard=True, one_time_keyboard=True)
 
 # ===== Добавить подход =====
+# ===== Функция для клавиатуры с упражнениями =====
+def exercises_kb(exercises: list[str]):
+    # оставляем только валидные строки
+    exercises = [ex for ex in exercises if ex and isinstance(ex, str)]
+    
+    if exercises:
+        kb_buttons = [[KeyboardButton(text=ex)] for ex in exercises] + [
+            [KeyboardButton(text="➕ Добавить новое упражнение")],
+            [KeyboardButton(text="↩ В меню")]
+        ]
+    else:
+        kb_buttons = [
+            [KeyboardButton(text="➕ Добавить новое упражнение")],
+            [KeyboardButton(text="↩ В меню")]
+        ]
+    return ReplyKeyboardMarkup(keyboard=kb_buttons, resize_keyboard=True, one_time_keyboard=True)
+
+
+# ===== Добавить подход =====
 @dp.message(lambda m: m.text == "➕ Добавить подход")
 async def start_add_approach(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     exercises = await get_exercises(user_id)
     kb = exercises_kb(exercises)
+    
     await message.answer("Выберите упражнение или добавьте новое:", reply_markup=kb)
     await state.set_state(AddApproachStates.waiting_for_exercise)
+
 
 @dp.message(AddApproachStates.waiting_for_exercise)
 async def process_exercise(message: types.Message, state: FSMContext):
@@ -193,7 +214,7 @@ async def process_exercise(message: types.Message, state: FSMContext):
         await start(message, state)
         return
 
-    exercises = [ex.lower() for ex in await get_exercises(user_id)]
+    exercises = [ex.lower() for ex in await get_exercises(user_id) if ex]
     if text == "➕ Добавить новое упражнение":
         await message.answer("Введите название нового упражнения:")
         await state.set_state(AddApproachStates.waiting_for_new_exercise)
@@ -203,8 +224,18 @@ async def process_exercise(message: types.Message, state: FSMContext):
         return
 
     await state.update_data(exercise=text)
-    await message.answer("Выберите количество подходов:", reply_markup=sets_kb())
+
+    kb = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="1️⃣"), KeyboardButton(text="2️⃣"), KeyboardButton(text="3️⃣")],
+            [KeyboardButton(text="4️⃣"), KeyboardButton(text="5️⃣")],
+            [KeyboardButton(text="↩ В меню")]
+        ],
+        resize_keyboard=True, one_time_keyboard=True
+    )
+    await message.answer("Выберите количество подходов:", reply_markup=kb)
     await state.set_state(AddApproachStates.waiting_for_sets)
+
 
 @dp.message(AddApproachStates.waiting_for_new_exercise)
 async def add_new_exercise(message: types.Message, state: FSMContext):
@@ -215,10 +246,24 @@ async def add_new_exercise(message: types.Message, state: FSMContext):
         await start(message, state)
         return
 
+    if not text:  # защита от пустого ввода
+        await message.answer("❗ Название упражнения не может быть пустым.")
+        return
+
     await add_exercise(user_id, text)
     await state.update_data(exercise=text)
-    await message.answer(f"✅ Упражнение '{text}' добавлено!\nВыберите количество подходов:", reply_markup=sets_kb())
+
+    kb = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="1️⃣"), KeyboardButton(text="2️⃣"), KeyboardButton(text="3️⃣")],
+            [KeyboardButton(text="4️⃣"), KeyboardButton(text="5️⃣")],
+            [KeyboardButton(text="↩ В меню")]
+        ],
+        resize_keyboard=True, one_time_keyboard=True
+    )
+    await message.answer(f"✅ Упражнение '{text}' добавлено!\nВыберите количество подходов:", reply_markup=kb)
     await state.set_state(AddApproachStates.waiting_for_sets)
+
 
 @dp.message(AddApproachStates.waiting_for_sets)
 async def process_sets(message: types.Message, state: FSMContext):
@@ -236,6 +281,7 @@ async def process_sets(message: types.Message, state: FSMContext):
     await state.update_data(sets=sets)
     await message.answer(f"Введите количество повторений для каждого из {sets} подходов через пробел (например: 10 10 12):")
     await state.set_state(AddApproachStates.waiting_for_reps)
+
 
 @dp.message(AddApproachStates.waiting_for_reps)
 async def process_reps(message: types.Message, state: FSMContext):
@@ -255,6 +301,7 @@ async def process_reps(message: types.Message, state: FSMContext):
     await save_record(message.from_user.id, data['exercise'], sets, reps)
     await message.answer(f"✅ Записано: {data['exercise']} — подходы: {sets}, повторений: {reps}", reply_markup=main_kb())
     await state.clear()
+
 
 # ===== История =====
 @dp.message(lambda m: m.text == "📜 История")
