@@ -70,9 +70,9 @@ async def init_db():
 def main_kb():
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton("📜 История"), KeyboardButton("📈 Прогресс"), KeyboardButton("📊 Статистика")],
-            [KeyboardButton("➕ Добавить подход")],
-            [KeyboardButton("⏰ Напоминания"), KeyboardButton("🔄 Рестарт бота")]
+            [KeyboardButton(text="📜 История"), KeyboardButton(text="📈 Прогресс"), KeyboardButton(text="📊 Статистика")],
+            [KeyboardButton(text="➕ Добавить подход")],
+            [KeyboardButton(text="⏰ Напоминания"), KeyboardButton(text="🔄 Рестарт бота")]
         ],
         resize_keyboard=True
     )
