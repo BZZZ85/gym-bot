@@ -196,10 +196,14 @@ def exercises_kb(exercises: list[str]):
 
 # ===== Добавить подход =====
 # ===== Добавить подход =====
+# ===== Добавить подход =====
 @dp.message(lambda m: m.text == "➕ Добавить подход")
 async def start_add_approach(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
-    exercises = await get_exercises(user_id)  # вернем список названий
+    exercises = await get_exercises(user_id)  # список названий упражнений
+
+    # Отфильтровываем None и пустые строки
+    exercises = [ex for ex in exercises if ex and ex.strip()]
 
     # Формируем клавиатуру
     kb_buttons = [[KeyboardButton(text=ex)] for ex in exercises] if exercises else []
@@ -207,8 +211,8 @@ async def start_add_approach(message: types.Message, state: FSMContext):
         [KeyboardButton("➕ Добавить новое упражнение")],
         [KeyboardButton("↩ В меню")]
     ]
-    kb = ReplyKeyboardMarkup(keyboard=kb_buttons, resize_keyboard=True, one_time_keyboard=True)
 
+    kb = ReplyKeyboardMarkup(keyboard=kb_buttons, resize_keyboard=True, one_time_keyboard=True)
     await message.answer("Выберите упражнение или добавьте новое:", reply_markup=kb)
     await state.set_state(AddApproachStates.waiting_for_exercise)
 
