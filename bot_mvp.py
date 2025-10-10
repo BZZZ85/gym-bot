@@ -109,16 +109,16 @@ def parse_exercise_input(text: str):
     Формат: <название упражнения> <подходы> <повторения через пробел> <вес>
     """
     parts = text.strip().split()
-    if len(parts) < 3:
+    if len(parts) < 4:
         return None
-    # Последний элемент — вес
-    weight = float(parts[-1])
-    # Второй элемент — количество подходов
-    approach = int(parts[-(len(parts)-2)])
-    # Остальное — название упражнения и повторения
-    exercise_text = " ".join(parts[:- (len(parts) - 2)])
-    reps = " ".join(parts[1:-1])
+
+    weight = float(parts[-1])       # последний элемент — вес
+    approach = int(parts[-(len(parts)-1)])  # второй элемент — количество подходов
+    reps = " ".join(parts[-(len(parts)-2):-1])  # все элементы между подходами и весом
+    exercise_text = " ".join(parts[:-(len(parts)-2)])  # остальное — название
+
     return exercise_text, approach, reps, weight
+
 
 
 
