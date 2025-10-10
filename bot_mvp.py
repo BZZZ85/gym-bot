@@ -39,7 +39,7 @@ class AddApproachStates(StatesGroup):
 
 # ===== Подключение к БД =====
 
- ===== Подключение к БД и инициализация таблиц =====
+# ===== Подключение к БД и инициализация таблиц =====
 async def init_db():
     global db_pool
     db_pool = await asyncpg.create_pool(DATABASE_URL)
