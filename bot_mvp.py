@@ -39,48 +39,34 @@ class AddApproachStates(StatesGroup):
 
 # ===== Подключение к БД =====
 
+ ===== Подключение к БД и инициализация таблиц =====
 async def init_db():
     global db_pool
     db_pool = await asyncpg.create_pool(DATABASE_URL)
 
     async with db_pool.acquire() as conn:
-        # создаём таблицу с колонкой name (если её нет)
+        # Таблица пользователей (если её нет)
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                user_id BIGINT PRIMARY KEY,
+                username TEXT
+            )
+        """)
+
+        # Таблица упражнений
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS exercises (
                 id SERIAL PRIMARY KEY,
                 user_id BIGINT REFERENCES users(user_id) ON DELETE CASCADE,
-                name TEXT
+                exercise TEXT,
+                approach INT,
+                reps TEXT,
+                weight TEXT,
+                created_at TIMESTAMP DEFAULT now()
             )
         """)
 
-        # ===== ПЕРЕИМЕНОВАНИЕ И DROP NOT NULL =====
-        try:
-            await conn.execute("ALTER TABLE exercises RENAME COLUMN name TO exercise;")
-        except Exception:
-            pass
-        try:
-            await conn.execute("ALTER TABLE exercises ALTER COLUMN exercise DROP NOT NULL;")
-        except Exception:
-            pass
-
-        # проверка и добавление других колонок
-        columns = await conn.fetch("""
-            SELECT column_name FROM information_schema.columns 
-            WHERE table_name='exercises'
-        """)
-        column_names = [c['column_name'] for c in columns]
-        if 'approach' not in column_names:
-            await conn.execute("ALTER TABLE exercises ADD COLUMN approach INT;")
-        if 'reps' not in column_names:
-            await conn.execute("ALTER TABLE exercises ADD COLUMN reps TEXT;")
-        if 'weight' not in column_names:
-            await conn.execute("ALTER TABLE exercises ADD COLUMN weight TEXT;")
-        if 'created_at' not in column_names:
-            await conn.execute("ALTER TABLE exercises ADD COLUMN created_at TIMESTAMP DEFAULT now();")
-
-    
-
-          # Таблица записей тренировок
+        # Таблица записей тренировок
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS records (
                 id SERIAL PRIMARY KEY,
@@ -91,27 +77,40 @@ async def init_db():
                 date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-async def add_new_exercise(user_id, text):
-    """
-    Добавляет новое упражнение для пользователя.
-    Если текст пустой или None, ничего не делает.
-    """
-    if not text or text.strip() == "":
-        print("Пустой текст упражнения, пропускаем вставку.")
-        return
-
-    await add_exercise(user_id, text.strip())
 
 
-async def add_exercise(user_id, exercise_text):
+# ===== Функция вставки упражнения в БД =====
+async def add_exercise_to_db(user_id, exercise_text):
     """
-    Вставка упражнения в таблицу exercises
+    Вставляет новое упражнение для пользователя в таблицу exercises.
     """
+    if not exercise_text or exercise_text.strip() == "":
+        return  # пустой текст игнорируем
+
     async with db_pool.acquire() as conn:
         await conn.execute(
             "INSERT INTO exercises (user_id, exercise) VALUES ($1, $2)",
-            user_id, exercise_text
+            user_id, exercise_text.strip()
         )
+
+
+# ===== FSM-хэндлер для добавления нового упражнения =====
+@dp.message(AddApproachStates.waiting_for_new_exercise)
+async def process_new_exercise(message: types.Message, state: FSMContext):
+    text = message.text.strip()
+    user_id = message.from_user.id
+
+    if text == "↩ В меню":
+        await start(message, state)
+        return
+
+    # Добавляем упражнение в БД
+    await add_exercise_to_db(user_id, text)
+
+    await state.update_data(exercise=text)
+    await message.answer(f"✅ Упражнение '{text}' добавлено!")
+
+    await ask_for_sets(message, state)
 
 # ===== Главное меню =====
 def main_kb():
