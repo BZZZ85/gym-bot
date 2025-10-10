@@ -384,7 +384,6 @@ async def show_progress_graph(message, user_id):
         await message.answer("У вас пока нет записей для построения графика.", reply_markup=main_kb())
         return
 
-    # Сгруппируем по упражнениям
     exercises_data = {}
     for r in records:
         exercise = r['exercise']
@@ -393,7 +392,6 @@ async def show_progress_graph(message, user_id):
         total_reps = sum(reps_list)
         exercises_data.setdefault(exercise, []).append((date, total_reps))
 
-    # Строим график
     plt.figure(figsize=(8, 4))
     for exercise, data_points in exercises_data.items():
         dates = [d for d, _ in data_points]
@@ -413,8 +411,8 @@ async def show_progress_graph(message, user_id):
     buf.seek(0)
     plt.close()
 
-    # Создаём InputFile правильно
-    photo = types.InputFile(buf, filename="progress.png")
+    # В aiogram v3 нужно использовать types.BufferedInputFile
+    photo = types.BufferedInputFile(buf, filename="progress.png")
     await message.answer_photo(photo=photo)
 
 # ===== Рестарт =====
