@@ -47,19 +47,34 @@ async def init_db():
                 username TEXT
             )
         """)
+
         # Таблица упражнений
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS exercises (
                 id SERIAL PRIMARY KEY,
-                user_id BIGINT REFERENCES users(user_id) ON DELETE CASCADE,
-                exercise TEXT NOT NULL,
-                approach INT,
-                reps TEXT,
-                weight TEXT,
-                created_at TIMESTAMP DEFAULT now()
+                user_id BIGINT REFERENCES users(user_id) ON DELETE CASCADE
             )
         """)
-        # Таблица записей
+
+        # Проверяем и добавляем колонки, если их нет
+        columns = await conn.fetch("""
+            SELECT column_name FROM information_schema.columns 
+            WHERE table_name='exercises'
+        """)
+        column_names = [c['column_name'] for c in columns]
+
+        if 'exercise' not in column_names:
+            await conn.execute("ALTER TABLE exercises ADD COLUMN exercise TEXT;")
+        if 'approach' not in column_names:
+            await conn.execute("ALTER TABLE exercises ADD COLUMN approach INT;")
+        if 'reps' not in column_names:
+            await conn.execute("ALTER TABLE exercises ADD COLUMN reps TEXT;")
+        if 'weight' not in column_names:
+            await conn.execute("ALTER TABLE exercises ADD COLUMN weight TEXT;")
+        if 'created_at' not in column_names:
+            await conn.execute("ALTER TABLE exercises ADD COLUMN created_at TIMESTAMP DEFAULT now();")
+
+        # Таблица записей тренировок
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS records (
                 id SERIAL PRIMARY KEY,
@@ -70,8 +85,6 @@ async def init_db():
                 date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-
-    await dp.start_polling(bot)
 
 # ===== Главное меню =====
 def main_kb():
