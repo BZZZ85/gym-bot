@@ -120,19 +120,8 @@ def parse_exercise_input(text: str):
     reps = " ".join(parts[1:-1])
     return exercise_text, approach, reps, weight
 
-# ===== Функция вставки упражнения в БД =====
-async def add_exercise_to_db(user_id, exercise_text):
-    """
-    Вставляет новое упражнение для пользователя в таблицу exercises.
-    """
-    if not exercise_text or exercise_text.strip() == "":
-        return  # пустой текст игнорируем
 
-    async with db_pool.acquire() as conn:
-        await conn.execute(
-            "INSERT INTO exercises (user_id, exercise) VALUES ($1, $2)",
-            user_id, exercise_text.strip()
-        )
+
 
 
 # ===== FSM-хэндлер для добавления нового упражнения =====
