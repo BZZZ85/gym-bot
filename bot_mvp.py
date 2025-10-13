@@ -21,7 +21,7 @@ if os.path.exists("ton.env"):
 
 # Получаем переменные окружения (Railway Variables или ton.env)
 print("DEBUG: available env keys:", sorted(k for k in os.environ.keys() if "BOT" in k or "TOKEN" in k))
-print("DATABASE_URL =", DATABASE_URL)
+
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
