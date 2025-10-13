@@ -15,6 +15,7 @@ import io
 from datetime import datetime
 from aiogram import types
 from aiogram.types import FSInputFile
+from aiogram.filters import Command
 # Загружаем локальный .env только если он есть
 if os.path.exists("ton.env"):
     load_dotenv("ton.env")
