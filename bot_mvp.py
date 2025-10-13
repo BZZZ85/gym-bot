@@ -847,9 +847,10 @@ async def reminder_scheduler(bot):
 
 # ===== Запуск =====
 async def main():
-    await create_db_pool()
-    asyncio.create_task(reminder_scheduler())
+    await create_db_pool()  # подключение к базе
+    asyncio.create_task(reminder_scheduler(bot))  # <-- передаём bot сюда
     await dp.start_polling(bot)
+
 
 
 if __name__ == "__main__":
