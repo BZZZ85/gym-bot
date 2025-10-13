@@ -766,6 +766,33 @@ async def reminder_scheduler(bot):
         await asyncio.sleep(60)  # проверка каждую минуту
 
 # Запуск фона
+db_pool = None
+
+async def create_db_pool():
+    global db_pool
+    db_pool = await asyncpg.create_pool(
+        user="postgres",
+        password="your_password",
+        database="your_db",
+        host="your_host",
+    )
+    print("✅ База данных подключена")
+
+async def reminder_scheduler():
+    global db_pool
+    while True:
+        if db_pool is None:
+            await asyncio.sleep(5)
+            continue
+        async with db_pool.acquire() as conn:
+            # тут логика напоминаний
+            pass
+        await asyncio.sleep(60)  # проверка каждую минуту
+
+async def main():
+    await create_db_pool()
+    asyncio.create_task(reminder_scheduler())
+    await dp.start_polling(bot)  # <-- исправленный запуск
 async def on_startup(bot):
     asyncio.create_task(reminder_scheduler(bot))
     
@@ -774,6 +801,6 @@ async def main():
     await init_db()
     await dp.start_polling(bot)
 
+
 if __name__ == "__main__":
-    asyncio.run(on_startup(bot))
-    executor.start_polling(dp)
+    asyncio.run(main())
