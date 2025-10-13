@@ -15,6 +15,7 @@ import io
 from datetime import datetime
 from aiogram import types
 from aiogram.types import FSInputFile
+from datetime import datetime, timedelta, time
 
 # Загружаем локальный .env только если он есть
 if os.path.exists("ton.env"):
@@ -813,38 +814,34 @@ async def restart_bot(message: types.Message):
 from datetime import datetime
 import asyncio
 
-async def reminder_scheduler():
+async def reminder_scheduler(bot):
     global db_pool
-    print("🔄 reminder_scheduler запущен!")
-
     while True:
         if db_pool is None:
-            print("⚠️ DB pool не готов, жду 5 секунд...")
             await asyncio.sleep(5)
             continue
 
-        now = datetime.now().strftime("%H:%M")
-        try:
-            async with db_pool.acquire() as conn:
-                reminders = await conn.fetch(
-                    "SELECT user_id, time FROM reminders WHERE enabled = TRUE"
-                )
+        now = datetime.now()
+        now_str = now.strftime("%H:%M")
 
-            for r in reminders:
-                reminder_time = r["time"].strftime("%H:%M")
-                if reminder_time == now:
-                    try:
-                        await bot.send_message(
-                            r["user_id"],
-                            "🏋️ Время тренировки! Не забудь позаниматься 💪"
-                        )
-                        print(f"📩 Отправлено напоминание пользователю {r['user_id']}")
-                    except Exception as e:
-                        print(f"❌ Ошибка при отправке пользователю {r['user_id']}: {e}")
-        except Exception as e:
-            print(f"❌ Ошибка в reminder_scheduler: {e}")
+        async with db_pool.acquire() as conn:
+            reminders = await conn.fetch("SELECT user_id, time FROM reminders WHERE enabled = TRUE")
 
-        await asyncio.sleep(60)  # проверка каждую минуту
+        for r in reminders:
+            reminder_time = r['time']
+            if isinstance(reminder_time, time):
+                reminder_time_str = reminder_time.strftime("%H:%M")
+            else:
+                reminder_time_str = str(reminder_time)[:5]
+
+            # Сравниваем только часы и минуты
+            if reminder_time_str == now_str:
+                try:
+                    await bot.send_message(r["user_id"], "🏋️ Время тренировки! Не забудь позаниматься 💪")
+                except Exception as e:
+                    print(f"Ошибка отправки уведомления: {e}")
+
+        await asyncio.sleep(60)
 
 
 
