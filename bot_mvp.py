@@ -812,7 +812,7 @@ async def restart_bot(message: types.Message):
 async def reminder_scheduler(bot, db_pool):
     """Фоновая задача для напоминаний."""
     while True:
-        now = datetime.datetime.now().strftime("%H:%M")
+        now = datetime.now().strftime("%H:%M")
         try:
             async with db_pool.acquire() as conn:
                 reminders = await conn.fetch("SELECT user_id, time FROM reminders WHERE enabled = TRUE")
