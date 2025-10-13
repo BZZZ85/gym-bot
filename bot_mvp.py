@@ -52,7 +52,30 @@ class DeleteExerciseStates(StatesGroup):
 class ReminderState(StatesGroup):
     waiting_for_time = State()
 
-# ===== Подключение к БД =====
+
+async def reminder_scheduler(bot, db_pool):
+    """Фоновая задача для отправки напоминаний."""
+    while True:
+        now = datetime.datetime.now().strftime("%H:%M")
+        try:
+            async with db_pool.acquire() as conn:
+                reminders = await conn.fetch(
+                    "SELECT user_id, time FROM reminders WHERE enabled = TRUE"
+                )
+                for r in reminders:
+                    reminder_time = r["time"]
+                    if reminder_time == now:
+                        try:
+                            await bot.send_message(
+                                r["user_id"],
+                                "🏋️ Время тренировки! Не забывайте разминку 💪"
+                            )
+                        except Exception as e:
+                            print(f"Ошибка при отправке напоминания пользователю {r['user_id']}: {e}")
+        except Exception as e:
+            print(f"Ошибка в планировщике: {e}")
+
+        await asyncio.sleep(60)  # проверяем каждую минуту
 
 # ===== Подключение к БД и инициализация таблиц =====
 async def init_db():
@@ -783,55 +806,43 @@ async def show_statistics(message: types.Message):
 @dp.message(lambda m: m.text == "🔄 Рестарт бота")
 async def restart_bot(message: types.Message):
     await start(message)
-async def reminder_scheduler(bot):
+
+
+# ===== Планировщик напоминаний =====
+async def reminder_scheduler(bot, db_pool):
+    """Фоновая задача для напоминаний."""
     while True:
-        now = datetime.now().strftime("%H:%M")
-        async with db_pool.acquire() as conn:
-            reminders = await conn.fetch("SELECT user_id, time FROM reminders WHERE enabled = TRUE")
-        for r in reminders:
-            if r["time"] == now:
-                try:
-                    await bot.send_message(r["user_id"], "🏋️ Время тренировки! Не забудь позаниматься 💪")
-                except Exception:
-                    pass
-        await asyncio.sleep(60)  # проверка каждую минуту
+        now = datetime.datetime.now().strftime("%H:%M")
+        try:
+            async with db_pool.acquire() as conn:
+                reminders = await conn.fetch("SELECT user_id, time FROM reminders WHERE enabled = TRUE")
+                for r in reminders:
+                    if r["time"] == now:
+                        try:
+                            await bot.send_message(
+                                r["user_id"],
+                                "🏋️ Время тренировки! Не забудь разминку 💪"
+                            )
+                        except Exception as e:
+                            print(f"Ошибка при отправке уведомления {r['user_id']}: {e}")
+        except Exception as e:
+            print(f"Ошибка планировщика: {e}")
+        await asyncio.sleep(60)  # проверяем каждую минуту
 
-# Запуск фона
-db_pool = None
 
-async def create_db_pool():
-    global db_pool
-    db_pool = await asyncpg.create_pool(
-        user="postgres",
-        password="your_password",
-        database="your_db",
-        host="your_host",
-    )
-    print("✅ База данных подключена")
-
-async def reminder_scheduler():
-    global db_pool
-    while True:
-        if db_pool is None:
-            await asyncio.sleep(5)
-            continue
-        async with db_pool.acquire() as conn:
-            # тут логика напоминаний
-            pass
-        await asyncio.sleep(60)  # проверка каждую минуту
-
-async def main():
-    await create_db_pool()
-    asyncio.create_task(reminder_scheduler())
-    await dp.start_polling(bot)  # <-- исправленный запуск
-async def on_startup(bot):
-    asyncio.create_task(reminder_scheduler(bot))
-    
 # ===== Запуск =====
 async def main():
-    await init_db()
+    global db_pool
+    db_pool = await asyncpg.create_pool(DATABASE_URL)
+    print("✅ База данных подключена")
+
+    # Запускаем планировщик в фоне
+    asyncio.create_task(reminder_scheduler(bot, db_pool))
+
+    # Запускаем бота
     await dp.start_polling(bot)
 
 
 if __name__ == "__main__":
     asyncio.run(main())
+
