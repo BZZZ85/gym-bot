@@ -74,17 +74,7 @@ async def init_db():
             enabled BOOLEAN DEFAULT TRUE
         );
         """)
-     try:
-        await conn.execute("""
-            INSERT INTO reminders (user_id, time, enabled)
-            VALUES ($1, $2, TRUE)
-            ON CONFLICT (user_id) DO UPDATE
-            SET time = EXCLUDED.time,
-                enabled = TRUE
-        """, user_id, reminder_time.strftime("%H:%M"))
-    except Exception as e:
-        await message.answer(f"❌ Ошибка при сохранении напоминания: {e}")
-        return
+     
         # ===== Таблица упражнений =====
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS exercises (
@@ -361,18 +351,18 @@ async def save_reminder_time(message: types.Message, state: FSMContext):
         return
 
     async with db_pool.acquire() as conn:
-        try:
-            # Вставка или обновление записи
-            await conn.execute("""
-                INSERT INTO reminders (user_id, time, enabled)
-                VALUES ($1, $2, TRUE)
-                ON CONFLICT (user_id) DO UPDATE
-                SET time = EXCLUDED.time,
-                    enabled = TRUE
-            """, user_id, reminder_time)
-        except Exception as e:
-            await message.answer(f"❌ Ошибка при сохранении напоминания: {e}")
-            return
+    try:
+        await conn.execute("""
+            INSERT INTO reminders (user_id, time, enabled)
+            VALUES ($1, $2, TRUE)
+            ON CONFLICT (user_id) DO UPDATE
+            SET time = EXCLUDED.time,
+                enabled = TRUE
+        """, user_id, reminder_time.strftime("%H:%M"))
+    except Exception as e:
+        await message.answer(f"❌ Ошибка при сохранении напоминания: {e}")
+        return
+
 
     await message.answer(f"✅ Напоминание установлено на {reminder_time.strftime('%H:%M')}")
     await state.finish()
