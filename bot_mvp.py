@@ -815,33 +815,39 @@ from datetime import datetime
 import asyncio
 
 async def reminder_scheduler(bot):
+    """Фоновая задача для отправки напоминаний о тренировках."""
     global db_pool
+
     while True:
         if db_pool is None:
             await asyncio.sleep(5)
             continue
 
-        now = datetime.now()
-        now_str = now.strftime("%H:%M")
+        now_str = datetime.now().strftime("%H:%M")  # текущее время в HH:MM
 
-        async with db_pool.acquire() as conn:
-            reminders = await conn.fetch("SELECT user_id, time FROM reminders WHERE enabled = TRUE")
+        try:
+            async with db_pool.acquire() as conn:
+                reminders = await conn.fetch(
+                    "SELECT user_id, time FROM reminders WHERE enabled = TRUE"
+                )
 
-        for r in reminders:
-            reminder_time = r['time']
-            if isinstance(reminder_time, time):
-                reminder_time_str = reminder_time.strftime("%H:%M")
-            else:
-                reminder_time_str = str(reminder_time)[:5]
+            for r in reminders:
+                reminder_time_str = str(r["time"])[:5]  # только HH:MM
+                if reminder_time_str == now_str:
+                    try:
+                        await bot.send_message(
+                            r["user_id"],
+                            "🏋️ Время тренировки! Не забудь позаниматься 💪"
+                        )
+                        print(f"Напоминание отправлено пользователю {r['user_id']} в {now_str}")
+                    except Exception as e:
+                        print(f"Ошибка отправки уведомления пользователю {r['user_id']}: {e}")
 
-            # Сравниваем только часы и минуты
-            if reminder_time_str == now_str:
-                try:
-                    await bot.send_message(r["user_id"], "🏋️ Время тренировки! Не забудь позаниматься 💪")
-                except Exception as e:
-                    print(f"Ошибка отправки уведомления: {e}")
+        except Exception as e:
+            print(f"Ошибка планировщика: {e}")
 
-        await asyncio.sleep(60)
+        await asyncio.sleep(10)  # проверяем каждые 10 секунд
+
 
 
 
