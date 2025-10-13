@@ -800,6 +800,25 @@ async def show_statistics(message: types.Message):
 
     await message.answer(msg, reply_markup=main_kb())
 
+@dp.message(Command("test_reminder"))
+async def test_reminder(message: types.Message):
+    """Тестовое напоминание через 1 минуту"""
+    user_id = message.from_user.id
+    now = datetime.now()
+    test_time = (now + timedelta(minutes=1)).strftime("%H:%M")
+
+    async with db_pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO reminders (user_id, time, enabled)
+            VALUES ($1, $2, TRUE)
+            ON CONFLICT (user_id) DO UPDATE
+            SET time = EXCLUDED.time, enabled = TRUE;
+        """, user_id, test_time)
+
+    await message.answer(
+        f"⏰ Тестовое напоминание установлено на {test_time}. "
+        f"Ожидай уведомление через минуту 💪"
+    )
 
 
 # ===== Рестарт =====
