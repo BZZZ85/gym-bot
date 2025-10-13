@@ -117,6 +117,18 @@ async def init_db():
             enabled BOOLEAN DEFAULT TRUE
     )
 """)
+async def save_reminder_time(user_id: int, reminder_time: str, enabled: bool = True):
+    """
+    Сохраняет или обновляет время напоминания для пользователя.
+    """
+    async with db_pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO reminders (user_id, time, enabled)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (user_id) DO UPDATE
+            SET time = EXCLUDED.time,
+                enabled = EXCLUDED.enabled
+        """, user_id, reminder_time, enabled)
 
 
         await conn.execute("ALTER TABLE records ADD COLUMN IF NOT EXISTS weight TEXT;")
