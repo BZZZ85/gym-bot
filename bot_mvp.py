@@ -340,32 +340,29 @@ async def ask_time(message: types.Message, state: FSMContext):
 
 @dp.message(ReminderState.waiting_for_time)
 async def save_reminder_time(message: types.Message, state: FSMContext):
-    user_id = message.from_user.id
     time_text = message.text.strip()
+    user_id = message.from_user.id
 
-    # Проверяем правильность формата времени (например, HH:MM)
     try:
+        # Преобразуем текст в объект времени
         reminder_time = datetime.strptime(time_text, "%H:%M").time()
-    except ValueError:
-        await message.answer("❌ Неверный формат времени. Введите в формате ЧЧ:ММ, например 18:30.")
-        return
 
-    async with db_pool.acquire() as conn:
-    try:
-        await conn.execute("""
-            INSERT INTO reminders (user_id, time, enabled)
-            VALUES ($1, $2, TRUE)
-            ON CONFLICT (user_id) DO UPDATE
-            SET time = EXCLUDED.time,
-                enabled = TRUE
-        """, user_id, reminder_time.strftime("%H:%M"))
+        async with db_pool.acquire() as conn:
+            await conn.execute("""
+                INSERT INTO reminders (user_id, time, enabled)
+                VALUES ($1, $2, TRUE)
+                ON CONFLICT (user_id) DO UPDATE
+                SET time = EXCLUDED.time,
+                    enabled = TRUE
+            """, user_id, reminder_time.strftime("%H:%M"))
+
+        await message.answer(f"✅ Напоминание установлено на {time_text}")
+        await state.clear()
+
+    except ValueError:
+        await message.answer("❌ Неверный формат времени. Используйте формат ЧЧ:ММ (например, 09:00)")
     except Exception as e:
         await message.answer(f"❌ Ошибка при сохранении напоминания: {e}")
-        return
-
-
-    await message.answer(f"✅ Напоминание установлено на {reminder_time.strftime('%H:%M')}")
-    await state.finish()
 
     # простая валидация формата
     import re
