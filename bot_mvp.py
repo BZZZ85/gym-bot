@@ -74,7 +74,17 @@ async def init_db():
             enabled BOOLEAN DEFAULT TRUE
         );
         """)
-
+     try:
+        await conn.execute("""
+            INSERT INTO reminders (user_id, time, enabled)
+            VALUES ($1, $2, TRUE)
+            ON CONFLICT (user_id) DO UPDATE
+            SET time = EXCLUDED.time,
+                enabled = TRUE
+        """, user_id, reminder_time.strftime("%H:%M"))
+    except Exception as e:
+        await message.answer(f"❌ Ошибка при сохранении напоминания: {e}")
+        return
         # ===== Таблица упражнений =====
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS exercises (
