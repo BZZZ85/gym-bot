@@ -46,6 +46,9 @@ class AddApproachStates(StatesGroup):
     waiting_for_weight = State() 
 class DeleteExerciseStates(StatesGroup):
     waiting_for_exercise_to_delete = State()
+class ReminderState(StatesGroup):
+    waiting_for_time = State()
+
 # ===== Подключение к БД =====
 
 # ===== Подключение к БД и инициализация таблиц =====
@@ -96,6 +99,15 @@ async def init_db():
             ALTER TABLE records 
             ADD COLUMN IF NOT EXISTS weight TEXT;
         """)
+        # ===== Таблица напоминаний =====
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS reminders (
+            user_id BIGINT PRIMARY KEY,
+            time TEXT,                -- время напоминания (например, "09:00")
+            enabled BOOLEAN DEFAULT TRUE
+    )
+""")
+
 
         await conn.execute("ALTER TABLE records ADD COLUMN IF NOT EXISTS weight TEXT;")
 
@@ -310,6 +322,39 @@ async def add_approach_button(message: types.Message, state: FSMContext):
     await message.answer("Выберите упражнение или добавьте новое:", reply_markup=kb)
     await state.set_state(AddApproachStates.waiting_for_exercise)
 
+@dp.message(lambda m: m.text == "🔔 Установить время напоминания")
+async def ask_time(message: types.Message, state: FSMContext):
+    await message.answer("🕒 Введите время напоминания в формате HH:MM (например, 09:00):")
+    await state.set_state(ReminderState.waiting_for_time)
+
+@dp.message(ReminderState.waiting_for_time)
+async def save_reminder_time(message: types.Message, state: FSMContext):
+    time_text = message.text.strip()
+    user_id = message.from_user.id
+
+    # простая валидация формата
+    import re
+    if not re.match(r"^\d{2}:\d{2}$", time_text):
+        await message.answer("⚠️ Неверный формат. Введите время в формате HH:MM, например 07:30.")
+        return
+
+    async with db_pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO reminders (user_id, time, enabled)
+            VALUES ($1, $2, TRUE)
+            ON CONFLICT (user_id)
+            DO UPDATE SET time = EXCLUDED.time, enabled = TRUE
+        """, user_id, time_text)
+
+    await message.answer(f"✅ Напоминание установлено на {time_text}. Я напомню вам о тренировке 💪", reply_markup=main_kb())
+    await state.clear()
+
+@dp.message(lambda m: m.text == "🔕 Выключить напоминания")
+async def disable_reminders(message: types.Message):
+    user_id = message.from_user.id
+    async with db_pool.acquire() as conn:
+        await conn.execute("UPDATE reminders SET enabled = FALSE WHERE user_id = $1", user_id)
+    await message.answer("🔕 Напоминания отключены.", reply_markup=main_kb())
 
 # ===== Добавление подхода =====
 @dp.message(lambda m: m.text.startswith("Добавить:"))
@@ -629,6 +674,21 @@ async def show_progress_graph_for_exercise(message: types.Message, exercise: str
     if os.path.exists(filename):
         os.remove(filename)
 
+@dp.message(lambda m: m.text == "⏰ Напоминания")
+async def reminders_menu(message: types.Message):
+    kb = [
+        [types.KeyboardButton(text="🔔 Установить время напоминания")],
+        [types.KeyboardButton(text="🔕 Выключить напоминания")],
+        [types.KeyboardButton(text="⬅️ Назад")]
+    ]
+    markup = types.ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+    await message.answer(
+        "⏰ Настройте напоминания о тренировках.\n"
+        "Вы можете установить время или отключить уведомления.",
+        reply_markup=markup
+    )
+
+
 
 
 #статистика
@@ -691,11 +751,28 @@ async def show_statistics(message: types.Message):
 @dp.message(lambda m: m.text == "🔄 Рестарт бота")
 async def restart_bot(message: types.Message):
     await start(message)
+async def reminder_scheduler(bot):
+    while True:
+        now = datetime.now().strftime("%H:%M")
+        async with db_pool.acquire() as conn:
+            reminders = await conn.fetch("SELECT user_id, time FROM reminders WHERE enabled = TRUE")
+        for r in reminders:
+            if r["time"] == now:
+                try:
+                    await bot.send_message(r["user_id"], "🏋️ Время тренировки! Не забудь позаниматься 💪")
+                except Exception:
+                    pass
+        await asyncio.sleep(60)  # проверка каждую минуту
 
+# Запуск фона
+async def on_startup(bot):
+    asyncio.create_task(reminder_scheduler(bot))
+    
 # ===== Запуск =====
 async def main():
     await init_db()
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(on_startup(bot))
+    executor.start_polling(dp)
