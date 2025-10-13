@@ -825,7 +825,7 @@ async def reminder_scheduler(bot):
             await asyncio.sleep(5)
             continue
 
-        now = datetime.now()
+        now = datetime.now() 
         now_str = now.strftime("%H:%M")  # текущее время HH:MM
 
         try:
@@ -835,7 +835,7 @@ async def reminder_scheduler(bot):
                 )
 
             for r in reminders:
-                reminder_time_str = str(r["time"])[:5]
+                reminder_time_str = str(reminder_time)[:5]  # оставляем первые 5 символов "HH:MM"
 
                 # Отправляем только один раз в день для этого времени
                 key = (r["user_id"], reminder_time_str)
