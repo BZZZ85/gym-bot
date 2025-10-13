@@ -815,15 +815,18 @@ from datetime import datetime
 import asyncio
 
 async def reminder_scheduler(bot):
-    """Фоновая задача для отправки напоминаний о тренировках."""
+    """Умный планировщик напоминаний с поддержкой нескольких напоминаний."""
     global db_pool
+
+    sent_today = set()  # хранит (user_id, time_str), чтобы не отправлять повторно
 
     while True:
         if db_pool is None:
             await asyncio.sleep(5)
             continue
 
-        now_str = datetime.now().strftime("%H:%M")  # текущее время в HH:MM
+        now = datetime.now()
+        now_str = now.strftime("%H:%M")  # текущее время HH:MM
 
         try:
             async with db_pool.acquire() as conn:
@@ -832,21 +835,30 @@ async def reminder_scheduler(bot):
                 )
 
             for r in reminders:
-                reminder_time_str = str(r["time"])[:5]  # только HH:MM
-                if reminder_time_str == now_str:
+                reminder_time_str = str(r["time"])[:5]
+
+                # Отправляем только один раз в день для этого времени
+                key = (r["user_id"], reminder_time_str)
+                if reminder_time_str == now_str and key not in sent_today:
                     try:
                         await bot.send_message(
                             r["user_id"],
-                            "🏋️ Время тренировки! Не забудь позаниматься 💪"
+                            "🏋️ Время тренировки! Не забудьте разминку 💪"
                         )
-                        print(f"Напоминание отправлено пользователю {r['user_id']} в {now_str}")
+                        print(f"✅ Напоминание отправлено пользователю {r['user_id']} в {now_str}")
+                        sent_today.add(key)
                     except Exception as e:
-                        print(f"Ошибка отправки уведомления пользователю {r['user_id']}: {e}")
+                        print(f"❌ Ошибка отправки уведомления пользователю {r['user_id']}: {e}")
+
+            # Сброс sent_today в полночь
+            if now.hour == 0 and now.minute < 1:
+                sent_today.clear()
 
         except Exception as e:
-            print(f"Ошибка планировщика: {e}")
+            print(f"❌ Ошибка планировщика: {e}")
 
-        await asyncio.sleep(10)  # проверяем каждые 10 секунд
+        await asyncio.sleep(10)  # проверка каждые 10 секунд
+
 
 
 
