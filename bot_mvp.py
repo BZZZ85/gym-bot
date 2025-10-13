@@ -809,37 +809,48 @@ async def restart_bot(message: types.Message):
 
 
 # ===== Планировщик напоминаний =====
-async def reminder_scheduler(bot, db_pool):
-    """Фоновая задача для напоминаний."""
+from datetime import datetime
+import asyncio
+
+async def reminder_scheduler():
+    global db_pool
+    print("🔄 reminder_scheduler запущен!")
+
     while True:
+        if db_pool is None:
+            print("⚠️ DB pool не готов, жду 5 секунд...")
+            await asyncio.sleep(5)
+            continue
+
         now = datetime.now().strftime("%H:%M")
         try:
             async with db_pool.acquire() as conn:
-                reminders = await conn.fetch("SELECT user_id, time FROM reminders WHERE enabled = TRUE")
-                for r in reminders:
-                    if r["time"] == now:
-                        try:
-                            await bot.send_message(
-                                r["user_id"],
-                                "🏋️ Время тренировки! Не забудь разминку 💪"
-                            )
-                        except Exception as e:
-                            print(f"Ошибка при отправке уведомления {r['user_id']}: {e}")
+                reminders = await conn.fetch(
+                    "SELECT user_id, time FROM reminders WHERE enabled = TRUE"
+                )
+
+            for r in reminders:
+                reminder_time = r["time"].strftime("%H:%M")
+                if reminder_time == now:
+                    try:
+                        await bot.send_message(
+                            r["user_id"],
+                            "🏋️ Время тренировки! Не забудь позаниматься 💪"
+                        )
+                        print(f"📩 Отправлено напоминание пользователю {r['user_id']}")
+                    except Exception as e:
+                        print(f"❌ Ошибка при отправке пользователю {r['user_id']}: {e}")
         except Exception as e:
-            print(f"Ошибка планировщика: {e}")
-        await asyncio.sleep(60)  # проверяем каждую минуту
+            print(f"❌ Ошибка в reminder_scheduler: {e}")
+
+        await asyncio.sleep(60)  # проверка каждую минуту
+
 
 
 # ===== Запуск =====
 async def main():
-    global db_pool
-    db_pool = await asyncpg.create_pool(DATABASE_URL)
-    print("✅ База данных подключена")
-
-    # Запускаем планировщик в фоне
-    asyncio.create_task(reminder_scheduler(bot, db_pool))
-
-    # Запускаем бота
+    await create_db_pool()
+    asyncio.create_task(reminder_scheduler())
     await dp.start_polling(bot)
 
 
