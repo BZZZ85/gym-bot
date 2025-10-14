@@ -337,9 +337,12 @@ async def ask_time(message: types.Message, state: FSMContext):
     await message.answer("🕒 Введите время напоминания в формате HH:MM (например, 09:00):")
     await state.set_state(ReminderState.waiting_for_time)
 
+MOSCOW_TZ = pytz.timezone("Europe/Moscow")
+
 @dp.message(Command("add_reminder"))
 async def add_reminder(message: types.Message, state: FSMContext):
-    # Пример команды: /add_reminder 15.10.2025 20:30 Сделать тренировку 💪
+    # Пример команды:
+    # /add_reminder 15.10.2025 20:30 Сделать тренировку 💪
     parts = message.text.split(maxsplit=3)
     if len(parts) < 4:
         await message.answer("❌ Используй формат: /add_reminder DD.MM.YYYY HH:MM текст")
@@ -347,23 +350,24 @@ async def add_reminder(message: types.Message, state: FSMContext):
 
     date_str, time_str, reminder_text = parts[1], parts[2], parts[3]
 
-    from datetime import datetime, timedelta
-    import pytz
-    MOSCOW_TZ = pytz.timezone("Europe/Moscow")
-
     try:
         dt = MOSCOW_TZ.localize(datetime.strptime(f"{date_str} {time_str}", "%d.%m.%Y %H:%M"))
     except ValueError:
         await message.answer("⚠️ Неверный формат даты или времени. Пример: 15.10.2025 20:30")
         return
+    except Exception as e:
+        await message.answer(f"⚠️ Ошибка: {e}")
+        return
 
-    async with db_pool.acquire() as conn:
-        await conn.execute("""
-            INSERT INTO reminders (user_id, reminder_time, text, enabled)
-            VALUES ($1, $2, $3, TRUE)
-        """, message.from_user.id, dt, reminder_text)
-
-    await message.answer(f"✅ Напоминание установлено на {date_str} в {time_str}: {reminder_text}")
+    try:
+        async with db_pool.acquire() as conn:
+            await conn.execute("""
+                INSERT INTO reminders (user_id, reminder_time, text, enabled)
+                VALUES ($1, $2, $3, TRUE)
+            """, message.from_user.id, dt, reminder_text)
+        await message.answer(f"✅ Напоминание установлено на {date_str} в {time_str}: {reminder_text}")
+    except Exception as e:
+        await message.answer(f"❌ Ошибка при сохранении напоминания: {e}")
     except Exception as e:
         await message.answer(
             "⚠️ Неверный формат. Используй пример:\n"
