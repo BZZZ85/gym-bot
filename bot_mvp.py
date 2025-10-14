@@ -857,9 +857,10 @@ async def reminder_scheduler(bot):
                         print(f"❌ Ошибка отправки уведомления пользователю {r['user_id']}: {e}")
 
             # Сброс sent_today в полночь
+            # Сброс sent_today в полночь
             if now.hour == 0 and now.minute < 1:
-            if now.hour == 0 and now.minute == 0:
                 sent_today.clear()
+
 
         except Exception as e:
             print(f"❌ Ошибка планировщика: {e}")
