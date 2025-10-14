@@ -894,9 +894,11 @@ async def save_reminder_time(message: types.Message, state: FSMContext):
 
 # ===== Запуск =====
 async def main():
-    await create_db_pool()  # подключение к базе
-    asyncio.create_task(reminder_scheduler())
-  # <-- передаём bot сюда
+    bot = Bot(token=BOT_TOKEN, parse_mode="HTML")
+    
+    # … твоя инициализация dp, db и т.д.
+    
+    asyncio.create_task(reminder_scheduler(bot))  # ✅ передаём bot
     await dp.start_polling(bot)
 
 
