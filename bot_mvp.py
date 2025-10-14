@@ -148,7 +148,7 @@ async def add_exercise_to_db(user_id, exercise_text, approach=1, reps="", weight
             """,
             user_id, exercise_text.strip(), approach, reps, " ".join(map(str, weights)) if weights else None
         )
-
+MOSCOW_TZ = pytz.timezone("Europe/Moscow")
 def parse_exercise_input(text: str):
     """
     Пример ввода: "Жим лежа 3 10 12 15 60"
