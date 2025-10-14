@@ -363,48 +363,32 @@ async def ask_time(message: types.Message, state: FSMContext):
     await message.answer("🕒 Введите время напоминания в формате HH:MM (например, 09:00):")
     await state.set_state(ReminderState.waiting_for_time)
 
-@dp.message(ReminderState.waiting_for_time)
-async def save_reminder_time(message: types.Message, state: FSMContext):
-    time_text = message.text.strip()
+@dp.message(StateFilter("waiting_for_reminder_time"))
+async def save_reminder(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
+    reminder_text = message.text.strip()
 
+    # Проверяем формат
     try:
-        # Преобразуем текст в объект времени
-        reminder_time = datetime.strptime(time_text, "%H:%M").time()
-
-        async with db_pool.acquire() as conn:
-            await conn.execute("""
-                INSERT INTO reminders (user_id, time, enabled)
-                VALUES ($1, $2, TRUE)
-                ON CONFLICT (user_id) DO UPDATE
-                SET time = EXCLUDED.time,
-                enabled = TRUE
-            """, user_id, reminder_time.strftime("%H:%M"))
-
-        await message.answer(f"✅ Напоминание установлено на {time_text}")
-        await state.clear()
-
+        datetime.strptime(reminder_text, "%H:%M")  # просто валидация
     except ValueError:
-        await message.answer("❌ Неверный формат времени. Используйте формат ЧЧ:ММ (например, 09:00)")
-    except Exception as e:
-        await message.answer(f"❌ Ошибка при сохранении напоминания: {e}")
-
-    # простая валидация формата
-    import re
-    if not re.match(r"^\d{2}:\d{2}$", time_text):
-        await message.answer("⚠️ Неверный формат. Введите время в формате HH:MM, например 07:30.")
+        await message.answer("❌ Неверный формат времени. Введите в виде ЧЧ:ММ (например, 08:30).")
         return
 
-    async with db_pool.acquire() as conn:
-        await conn.execute("""
-            INSERT INTO reminders (user_id, time, enabled)
-            VALUES ($1, $2, TRUE)
-            ON CONFLICT (user_id)
-            DO UPDATE SET time = EXCLUDED.time, enabled = TRUE
-        """, user_id, time_text)
+    # Сохраняем как текст 'HH:MM'
+    conn = await asyncpg.connect(DATABASE_URL)
+    await conn.execute("""
+        INSERT INTO reminders (user_id, time, enabled)
+        VALUES ($1, $2, TRUE)
+        ON CONFLICT (user_id) DO UPDATE
+        SET time = EXCLUDED.time,
+            enabled = TRUE
+    """, user_id, reminder_text)
+    await conn.close()
 
-    await message.answer(f"✅ Напоминание установлено на {time_text}. Я напомню вам о тренировке 💪", reply_markup=main_kb())
+    await message.answer(f"✅ Напоминание установлено на {reminder_text}")
     await state.clear()
+
 
 @dp.message(lambda m: m.text == "🔕 Выключить напоминания")
 async def disable_reminders(message: types.Message):
