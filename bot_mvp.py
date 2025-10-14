@@ -337,24 +337,33 @@ async def ask_time(message: types.Message, state: FSMContext):
     await message.answer("🕒 Введите время напоминания в формате HH:MM (например, 09:00):")
     await state.set_state(ReminderState.waiting_for_time)
 
-@dp.message(lambda m: m.text.startswith("напомни"))
-async def add_reminder(message: types.Message):
+@dp.message(Command("add_reminder"))
+async def add_reminder(message: types.Message, state: FSMContext):
+    # Пример команды: /add_reminder 15.10.2025 20:30 Сделать тренировку 💪
+    parts = message.text.split(maxsplit=3)
+    if len(parts) < 4:
+        await message.answer("❌ Используй формат: /add_reminder DD.MM.YYYY HH:MM текст")
+        return
+
+    date_str, time_str, reminder_text = parts[1], parts[2], parts[3]
+
+    from datetime import datetime, timedelta
+    import pytz
+    MOSCOW_TZ = pytz.timezone("Europe/Moscow")
+
     try:
-        # Пример: "напомни 15.10.2025 20:30 сходить в зал"
-        text = message.text.split(" ", 1)[1]
-        parts = text.split(" ", 2)
-        date_str, time_str = parts[0], parts[1]
-        note = parts[2] if len(parts) > 2 else "🏋️ Время тренировки! Не забудь позаниматься 💪"
+        dt = MOSCOW_TZ.localize(datetime.strptime(f"{date_str} {time_str}", "%d.%m.%Y %H:%M"))
+    except ValueError:
+        await message.answer("⚠️ Неверный формат даты или времени. Пример: 15.10.2025 20:30")
+        return
 
-        dt = datetime.strptime(f"{date_str} {time_str}", "%d.%m.%Y %H:%M")
+    async with db_pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO reminders (user_id, reminder_time, text, enabled)
+            VALUES ($1, $2, $3, TRUE)
+        """, message.from_user.id, dt, reminder_text)
 
-        async with db_pool.acquire() as conn:
-            await conn.execute("""
-                INSERT INTO reminders (user_id, reminder_time, text)
-                VALUES ($1, $2, $3)
-            """, message.from_user.id, dt, note)
-
-        await message.answer(f"✅ Напоминание установлено на {dt.strftime('%d.%m.%Y %H:%M')}")
+    await message.answer(f"✅ Напоминание установлено на {date_str} в {time_str}: {reminder_text}")
     except Exception as e:
         await message.answer(
             "⚠️ Неверный формат. Используй пример:\n"
