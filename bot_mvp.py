@@ -342,8 +342,8 @@ MOSCOW_TZ = pytz.timezone("Europe/Moscow")
 @dp.message(lambda m: m.text.startswith("напомни"))
 async def add_reminder(message: types.Message, state: FSMContext):
     """
-    Команда напоминания:
-    напомни DD.MM.YYYY HH:MM текст
+    Команда: напомни DD.MM.YYYY HH:MM текст
+    Пример: напомни 15.10.2025 20:30 Сделать тренировку 💪
     """
     parts = message.text.split(maxsplit=3)
     if len(parts) < 4:
@@ -353,23 +353,19 @@ async def add_reminder(message: types.Message, state: FSMContext):
     date_str, time_str, reminder_text = parts[1], parts[2], parts[3]
 
     try:
-        dt = MOSCOW_TZ.localize(datetime.strptime(f"{date_str} {time_str}", "%d.%m.%Y %H:%M"))
+        # Конвертируем в timezone-aware datetime
+        dt_naive = datetime.strptime(f"{date_str} {time_str}", "%d.%m.%Y %H:%M")
+        dt = MOSCOW_TZ.localize(dt_naive)
     except ValueError:
         await message.answer("⚠️ Неверный формат даты или времени. Пример: 15.10.2025 20:30")
-        return
-    except Exception as e:
-        await message.answer(f"⚠️ Ошибка: {e}")
         return
 
     try:
         async with db_pool.acquire() as conn:
-            await conn.execute(
-                """
+            await conn.execute("""
                 INSERT INTO reminders (user_id, reminder_time, text, enabled)
                 VALUES ($1, $2, $3, TRUE)
-                """,
-                message.from_user.id, dt, reminder_text
-            )
+            """, message.from_user.id, dt, reminder_text)
         await message.answer(f"✅ Напоминание установлено на {date_str} в {time_str}: {reminder_text}")
     except Exception as e:
         await message.answer(f"❌ Ошибка при сохранении напоминания: {e}")
@@ -791,13 +787,16 @@ from datetime import datetime, timedelta
 # Часовой пояс — например, Москва
 MOSCOW_TZ = pytz.timezone("Europe/Moscow")
 
-async def reminder_scheduler(bot):
+async def reminder_scheduler(bot: Bot):
+    """
+    Проверяет базу каждую минуту и отправляет напоминания.
+    """
     while True:
         now = datetime.now(MOSCOW_TZ).replace(second=0, microsecond=0)
         async with db_pool.acquire() as conn:
             reminders = await conn.fetch("""
                 SELECT id, user_id, text FROM reminders
-                WHERE enabled = TRUE AND reminder_time <= $1
+                WHERE enabled = TRUE AND reminder_time = $1
             """, now)
 
             for r in reminders:
@@ -807,14 +806,18 @@ async def reminder_scheduler(bot):
                 except Exception as e:
                     print(f"❌ Ошибка при отправке напоминания пользователю {r['user_id']}: {e}")
 
-        await asyncio.sleep(30)  # проверяем каждые 30 секунд
+        # Проверка каждую минуту
+        await asyncio.sleep(60)
 
 
-# ===== Запуск =====
+
 async def main():
     await create_db_pool()  # подключение к базе
-    asyncio.create_task(reminder_scheduler(bot))  # <-- передаём bot сюда
+    # Запускаем планировщик
+    asyncio.create_task(reminder_scheduler(bot))
+    # Запуск бота
     await dp.start_polling(bot)
+
 
 
 
