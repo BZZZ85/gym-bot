@@ -378,7 +378,7 @@ async def save_reminder_time(message: types.Message, state: FSMContext):
                 VALUES ($1, $2, TRUE)
                 ON CONFLICT (user_id) DO UPDATE
                 SET time = EXCLUDED.time,
-                    enabled = TRUE
+                enabled = TRUE
             """, user_id, reminder_time.strftime("%H:%M"))
 
         await message.answer(f"✅ Напоминание установлено на {time_text}")
@@ -814,59 +814,44 @@ async def restart_bot(message: types.Message):
 from datetime import datetime
 import asyncio
 
-async def reminder_scheduler(bot):
-    """Умный планировщик напоминаний с поддержкой нескольких напоминаний."""
-    """Планировщик напоминаний о тренировках."""
-    global db_pool
-
-    sent_today = set()  # хранит (user_id, time_str), чтобы не отправлять повторно
-    sent_today = set()  # (user_id, time_str)
+async def reminder_scheduler():
+    sent_today = set()
+    last_reset_day = datetime.now().day
 
     while True:
-        if db_pool is None:
-            await asyncio.sleep(5)
-            continue
-
-        now = datetime.now() 
         now = datetime.now()
-        now_str = now.strftime("%H:%M")  # текущее время HH:MM
+        now_str = now.strftime("%H:%M")
+
+        # Сброс списка отправленных напоминаний в полночь
+        if now.day != last_reset_day:
+            sent_today.clear()
+            last_reset_day = now.day
 
         try:
-            async with db_pool.acquire() as conn:
-                reminders = await conn.fetch(
-                    "SELECT user_id, time FROM reminders WHERE enabled = TRUE"
-                )
-                reminders = await conn.fetch("SELECT user_id, time FROM reminders WHERE enabled = TRUE")
+            conn = await asyncpg.connect(DATABASE_URL)
+            rows = await conn.fetch("SELECT user_id, time FROM reminders WHERE enabled = TRUE;")
 
-            for r in reminders:
-                reminder_time_str = str(reminder_time)[:5]  # оставляем первые 5 символов "HH:MM"
+            for row in rows:
+                reminder_time = row["time"]
 
-                # Отправляем только один раз в день для этого времени
-                reminder_time_str = str(r["time"])[:5]  # используем данные из базы
-                key = (r["user_id"], reminder_time_str)
-
-                if reminder_time_str == now_str and key not in sent_today:
+                # Проверяем совпадение текущего времени и установленного
+                if reminder_time == now_str and row["user_id"] not in sent_today:
                     try:
                         await bot.send_message(
-                            r["user_id"],
-                            "🏋️ Время тренировки! Не забудьте разминку 💪"
+                            row["user_id"],
+                            "⏰ Напоминание о тренировке!"
                         )
-                        print(f"✅ Напоминание отправлено пользователю {r['user_id']} в {now_str}")
-                        sent_today.add(key)
+                        sent_today.add(row["user_id"])
                     except Exception as e:
-                        print(f"❌ Ошибка отправки уведомления пользователю {r['user_id']}: {e}")
+                        logging.error(f"Ошибка при отправке напоминания пользователю {row['user_id']}: {e}")
 
-            # Сброс sent_today в полночь
-            # Сброс sent_today в полночь
-            if now.hour == 0 and now.minute < 1:
-                sent_today.clear()
-
-
+            await conn.close()
         except Exception as e:
-            print(f"❌ Ошибка планировщика: {e}")
+            logging.error(f"Ошибка в reminder_scheduler: {e}")
 
-        await asyncio.sleep(10)  # проверка каждые 10 секунд
-        await asyncio.sleep(10)  # проверяем каждые 10 секунд
+        # Проверяем каждую минуту
+        await asyncio.sleep(60)
+
 
 
 
