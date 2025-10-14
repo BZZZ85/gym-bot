@@ -57,29 +57,7 @@ class ReminderState(StatesGroup):
     waiting_for_time = State()
 
 
-async def reminder_scheduler(bot, db_pool):
-    """Фоновая задача для отправки напоминаний."""
-    while True:
-        now = datetime.datetime.now().strftime("%H:%M")
-        try:
-            async with db_pool.acquire() as conn:
-                reminders = await conn.fetch(
-                    "SELECT user_id, time FROM reminders WHERE enabled = TRUE"
-                )
-                for r in reminders:
-                    reminder_time = r["time"]
-                    if reminder_time == now:
-                        try:
-                            await bot.send_message(
-                                r["user_id"],
-                                "🏋️ Время тренировки! Не забывайте разминку 💪"
-                            )
-                        except Exception as e:
-                            print(f"Ошибка при отправке напоминания пользователю {r['user_id']}: {e}")
-        except Exception as e:
-            print(f"Ошибка в планировщике: {e}")
 
-        await asyncio.sleep(60)  # проверяем каждую минуту
 
 # ===== Подключение к БД и инициализация таблиц =====
 async def init_db():
@@ -800,47 +778,31 @@ async def restart_bot(message: types.Message):
 from datetime import datetime
 import asyncio
 
-async def reminder_scheduler():
-    """Фоновый планировщик напоминаний по текстовому времени HH:MM."""
-    global db_pool
-    sent_today = set()  # (user_id, time) для предотвращения повторов
-
+async def reminder_scheduler(bot):
+    sent_today = set()
     while True:
         if db_pool is None:
             await asyncio.sleep(5)
             continue
 
-        now_str = datetime.now().strftime("%H:%M")  # текущее время в HH:MM
-
+        now_str = datetime.now().strftime("%H:%M")
         try:
             async with db_pool.acquire() as conn:
-                reminders = await conn.fetch(
-                    "SELECT user_id, time, enabled, text FROM reminders WHERE enabled = TRUE"
-                )
-
+                reminders = await conn.fetch("SELECT user_id, time, enabled FROM reminders WHERE enabled = TRUE")
             for r in reminders:
-                reminder_time = r["time"]
-                key = (r["user_id"], reminder_time)
-
-                if reminder_time == now_str and key not in sent_today:
+                key = (r["user_id"], r["time"])
+                if r["time"] == now_str and key not in sent_today:
                     try:
-                        await bot.send_message(
-                            r["user_id"],
-                            r.get("text", "🏋️ Время тренировки! Не забудь позаниматься 💪")
-                        )
+                        await bot.send_message(r["user_id"], "🏋️ Время тренировки! 💪")
                         sent_today.add(key)
-                        print(f"✅ Напоминание отправлено пользователю {r['user_id']} в {now_str}")
                     except Exception as e:
-                        print(f"❌ Ошибка отправки уведомления пользователю {r['user_id']}: {e}")
-
-            # Сброс в полночь
+                        print(f"Ошибка уведомления {r['user_id']}: {e}")
             if now_str == "00:00":
                 sent_today.clear()
-
         except Exception as e:
-            print(f"❌ Ошибка планировщика: {e}")
+            print(f"Ошибка планировщика: {e}")
+        await asyncio.sleep(10)
 
-        await asyncio.sleep(10)  # проверка каждые 10 секунд
 
 
 
