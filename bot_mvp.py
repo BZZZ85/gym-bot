@@ -826,9 +826,9 @@ async def add_reminder(message: types.Message, state: FSMContext):
     await state.clear()
 
 async def main():
-    await create_db_pool()  # подключение к базе
-    # Запускаем планировщик
-    asyncio.create_task(reminder_scheduler(bot))
+    await create_db_pool()  # создаем пул соединений
+    # Запускаем планировщик с пулом БД
+    asyncio.create_task(reminder_scheduler(bot, db_pool))
     # Запуск бота
     await dp.start_polling(bot)
 
