@@ -794,15 +794,16 @@ from datetime import datetime, timedelta
 
 # Часовой пояс — например, Москва
 MOSCOW_TZ = pytz.timezone("Europe/Moscow")
-
+dt = MOSCOW_TZ.localize(datetime.strptime(f"{date_str} {time_str}", "%d.%m.%Y %H:%M"))
 async def reminder_scheduler(bot):
     while True:
-        now = datetime.now().replace(second=0, microsecond=0)
+        now = datetime.now(MOSCOW_TZ).replace(second=0, microsecond=0)
         async with db_pool.acquire() as conn:
             reminders = await conn.fetch("""
                 SELECT id, user_id, text FROM reminders
-                WHERE enabled = TRUE AND reminder_time = $1
-            """, now)
+                WHERE enabled = TRUE 
+                  AND reminder_time BETWEEN $1 AND $2
+            """, now - timedelta(minutes=1), now)
 
             for r in reminders:
                 try:
@@ -812,6 +813,7 @@ async def reminder_scheduler(bot):
                     print(f"❌ Ошибка при отправке напоминания пользователю {r['user_id']}: {e}")
 
         await asyncio.sleep(60)
+
 
 
 
