@@ -53,6 +53,11 @@ class DeleteExerciseStates(StatesGroup):
     waiting_for_exercise_to_delete = State()
 class ReminderState(StatesGroup):
     waiting_for_time = State()
+class HistoryStates(StatesGroup):
+    waiting_for_exercise = State()
+
+class StatisticsStates(StatesGroup):
+    waiting_for_exercise = State()
 
 
 
@@ -575,19 +580,42 @@ async def process_exercise_deletion(message: types.Message, state: FSMContext):
 
 # ===== История =====
 @dp.message(lambda m: m.text == "📜 История")
-async def history(message: types.Message):
+async def history_menu(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
-    records = await get_user_records(user_id)
-    if not records:
-        await message.answer("У вас пока нет записей.", reply_markup=main_kb())
+    exercises = await get_exercises(user_id)
+
+    if not exercises:
+        await message.answer("У вас пока нет упражнений.", reply_markup=main_kb())
         return
 
-    msg_text = "📊 Последние тренировки:\n\n"
-    for r in records:
+    kb_buttons = [[KeyboardButton(text=ex)] for ex in exercises if ex]
+    kb_buttons.append([KeyboardButton(text="↩ В меню")])
+    kb = ReplyKeyboardMarkup(keyboard=kb_buttons, resize_keyboard=True, one_time_keyboard=True)
+
+    await message.answer("Выберите упражнение для просмотра истории:", reply_markup=kb)
+    await state.set_state(HistoryStates.waiting_for_exercise)
+# ===== Обработка выбора упражнения для истории =====
+@dp.message(HistoryStates.waiting_for_exercise)
+async def show_history(message: types.Message, state: FSMContext):
+    text = message.text.strip()
+    if text == "↩ В меню":
+        await start(message, state)
+        return
+
+    user_id = message.from_user.id
+    records = await get_user_records(user_id)
+    selected_records = [r for r in records if r['exercise'] == text]
+
+    if not selected_records:
+        await message.answer("Нет записей по выбранному упражнению.", reply_markup=main_kb())
+        await state.clear()
+        return
+
+    msg_text = f"📊 История: {text}\n\n"
+    for r in selected_records:
         reps_list = r['reps'].split()
         weights_list = r['weight'].split() if r.get('weight') else ['0'] * r['sets']
-
-        msg_text += f"{r['date'].strftime('%d-%m-%Y')} — {r['exercise']}:\n"
+        msg_text += f"{r['date'].strftime('%d-%m-%Y')} — подходы: {r['sets']}\n"
         for i in range(r['sets']):
             rep = reps_list[i] if i < len(reps_list) else reps_list[-1]
             w = weights_list[i] if i < len(weights_list) else weights_list[-1]
@@ -595,6 +623,7 @@ async def history(message: types.Message):
         msg_text += "-"*20 + "\n"
 
     await message.answer(msg_text, reply_markup=main_kb())
+    await state.clear()
 
 # ===== Обработчик кнопки 📈 Прогресс =====
 
@@ -727,58 +756,22 @@ async def reminders_menu(message: types.Message):
 
 
 #статистика
+# ===== Обработчик кнопки "Статистика" =====
 @dp.message(lambda m: m.text == "📊 Статистика")
-async def show_statistics(message: types.Message):
+async def statistics_menu(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
-    async with db_pool.acquire() as conn:
-        records = await conn.fetch("SELECT exercise, sets, reps, weight FROM records WHERE user_id=$1", user_id)
+    exercises = await get_exercises(user_id)
 
-    if not records:
-        await message.answer("У вас пока нет записей для статистики.", reply_markup=main_kb())
+    if not exercises:
+        await message.answer("У вас пока нет упражнений.", reply_markup=main_kb())
         return
 
-    total_workouts = len(records)
-    total_sets = sum(r['sets'] for r in records)
+    kb_buttons = [[KeyboardButton(text=ex)] for ex in exercises if ex]
+    kb_buttons.append([KeyboardButton(text="↩ В меню")])
+    kb = ReplyKeyboardMarkup(keyboard=kb_buttons, resize_keyboard=True, one_time_keyboard=True)
 
-    # Собираем все веса и повторения
-    weights_all = []
-    exercise_reps = defaultdict(list)  # {exercise: [reps]}
-    exercise_max_weight = defaultdict(float)  # {exercise: max_weight}
-    for r in records:
-        # Вес
-        if r['weight']:
-            try:
-                weights_list = [float(w) for w in r['weight'].split()]
-                weights_all.extend(weights_list)
-                exercise_max_weight[r['exercise']] = max(exercise_max_weight[r['exercise']], max(weights_list))
-            except ValueError:
-                pass
-
-        # Повторения
-        if r['reps']:
-            try:
-                reps_list = [int(x) for x in r['reps'].split()]
-                exercise_reps[r['exercise']].extend(reps_list)
-            except ValueError:
-                pass
-
-    avg_weight = round(sum(weights_all) / len(weights_all), 1) if weights_all else 0
-
-    msg = (
-        f"📊 Ваша статистика:\n"
-        f"Количество тренировок: {total_workouts}\n"
-        f"Общее количество подходов: {total_sets}\n"
-        f"Средний вес по подходам: {avg_weight} кг\n\n"
-        f"Статистика по упражнениям:\n"
-    )
-
-    for exercise, reps in exercise_reps.items():
-        avg_reps = round(sum(reps) / len(reps), 1) if reps else 0
-        max_reps = max(reps) if reps else 0
-        max_weight = exercise_max_weight[exercise] if exercise_max_weight.get(exercise) else 0
-        msg += f"- {exercise}: средние {avg_reps} повторений, макс {max_reps} повторений, макс вес {max_weight} кг\n"
-
-    await message.answer(msg, reply_markup=main_kb())
+    await message.answer("Выберите упражнение для просмотра статистики:", reply_markup=kb)
+    await state.set_state(StatisticsStates.waiting_for_exercise)
 
 
 
@@ -846,7 +839,56 @@ async def reminder_scheduler(bot):
             print(f"❌ Ошибка в reminder_scheduler: {e}")
 
         await asyncio.sleep(20)
+# ===== Обработка выбора упражнения для статистики =====
+@dp.message(StatisticsStates.waiting_for_exercise)
+async def show_statistics_for_exercise(message: types.Message, state: FSMContext):
+    text = message.text.strip()
+    if text == "↩ В меню":
+        await start(message, state)
+        return
 
+    user_id = message.from_user.id
+    async with db_pool.acquire() as conn:
+        records = await conn.fetch(
+            "SELECT sets, reps, weight FROM records WHERE user_id=$1 AND exercise=$2",
+            user_id, text
+        )
+
+    if not records:
+        await message.answer("Нет записей по выбранному упражнению.", reply_markup=main_kb())
+        await state.clear()
+        return
+
+    total_sets = sum(r['sets'] for r in records)
+    reps_all = []
+    max_weight = 0
+
+    for r in records:
+        if r['reps']:
+            try:
+                reps_list = [int(x) for x in r['reps'].split()]
+                reps_all.extend(reps_list)
+            except ValueError:
+                pass
+
+        if r['weight']:
+            try:
+                weights_list = [float(x) for x in r['weight'].split()]
+                max_weight = max(max_weight, max(weights_list))
+            except ValueError:
+                pass
+
+    avg_reps = round(sum(reps_all)/len(reps_all),1) if reps_all else 0
+
+    msg = (
+        f"📊 Статистика по упражнению '{text}':\n"
+        f"Общее количество подходов: {total_sets}\n"
+        f"Среднее количество повторений: {avg_reps}\n"
+        f"Максимальный вес: {max_weight} кг\n"
+    )
+
+    await message.answer(msg, reply_markup=main_kb())
+    await state.clear()
 
 
 
