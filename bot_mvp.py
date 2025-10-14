@@ -858,12 +858,13 @@ async def save_reminder_time(message: types.Message, state: FSMContext):
 
     # Сохраняем в БД
     async with db_pool.acquire() as conn:
-        await conn.execute("""
-            INSERT INTO reminders (user_id, time, enabled)
-            VALUES ($1, $2, TRUE)
-            ON CONFLICT (user_id)
-            DO UPDATE SET time = EXCLUDED.time, enabled = TRUE
-        """, user_id, time_text)
+    await conn.execute("""
+        INSERT INTO reminders (user_id, time, enabled)
+        VALUES ($1, $2, TRUE)
+        ON CONFLICT (user_id) DO UPDATE
+        SET time = EXCLUDED.time,
+            enabled = TRUE
+    """, user_id, reminder_time.strftime("%H:%M"))
 
     await message.answer(f"✅ Напоминание установлено на {time_text}. Я напомню о тренировке 💪", reply_markup=main_kb())
     await state.clear()
