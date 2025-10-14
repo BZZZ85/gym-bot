@@ -1,5 +1,6 @@
 import os
 import asyncio
+import pytz
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
@@ -16,7 +17,6 @@ from datetime import datetime
 from aiogram import types
 from aiogram.types import FSInputFile
 from datetime import datetime, timedelta, time
-import pytz
 # Загружаем локальный .env только если он есть
 if os.path.exists("ton.env"):
     load_dotenv("ton.env")
