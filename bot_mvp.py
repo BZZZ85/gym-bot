@@ -1,5 +1,6 @@
 import os
 import asyncio
+import pytz
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
@@ -16,7 +17,6 @@ from datetime import datetime
 from aiogram import types
 from aiogram.types import FSInputFile
 from datetime import datetime, timedelta, time
-
 # Загружаем локальный .env только если он есть
 if os.path.exists("ton.env"):
     load_dotenv("ton.env")
@@ -70,14 +70,7 @@ async def init_db():
                 username TEXT
             )
         """)
-        await conn.execute("""
-        CREATE TABLE IF NOT EXISTS reminders (
-            user_id BIGINT PRIMARY KEY,
-            time TIME,
-            enabled BOOLEAN DEFAULT TRUE
-        );
-        """)
-     
+        
         # ===== Таблица упражнений =====
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS exercises (
@@ -115,11 +108,14 @@ async def init_db():
         # ===== Таблица напоминаний =====
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS reminders (
-            user_id BIGINT PRIMARY KEY,
-            time TEXT,                -- время напоминания (например, "09:00")
+            id SERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL,
+            reminder_time TIMESTAMP NOT NULL,
+            text TEXT DEFAULT '🏋️ Время тренировки! Не забудь позаниматься 💪',
             enabled BOOLEAN DEFAULT TRUE
-    )
+    );
 """)
+
         
 
 
@@ -341,47 +337,43 @@ async def ask_time(message: types.Message, state: FSMContext):
     await message.answer("🕒 Введите время напоминания в формате HH:MM (например, 09:00):")
     await state.set_state(ReminderState.waiting_for_time)
 
-@dp.message(ReminderState.waiting_for_time)
-async def save_reminder_time(message: types.Message, state: FSMContext):
-    time_text = message.text.strip()
-    user_id = message.from_user.id
+MOSCOW_TZ = pytz.timezone("Europe/Moscow")
+
+@dp.message(lambda m: m.text.startswith("напомни"))
+async def add_reminder(message: types.Message, state: FSMContext):
+    """
+    Команда напоминания:
+    напомни DD.MM.YYYY HH:MM текст
+    """
+    parts = message.text.split(maxsplit=3)
+    if len(parts) < 4:
+        await message.answer("❌ Используй формат: напомни DD.MM.YYYY HH:MM текст")
+        return
+
+    date_str, time_str, reminder_text = parts[1], parts[2], parts[3]
 
     try:
-        # Преобразуем текст в объект времени
-        reminder_time = datetime.strptime(time_text, "%H:%M").time()
-
-        async with db_pool.acquire() as conn:
-            await conn.execute("""
-                INSERT INTO reminders (user_id, time, enabled)
-                VALUES ($1, $2, TRUE)
-                ON CONFLICT (user_id) DO UPDATE
-                SET time = EXCLUDED.time,
-                    enabled = TRUE
-            """, user_id, reminder_time.strftime("%H:%M"))
-
-        await message.answer(f"✅ Напоминание установлено на {time_text}")
-        await state.clear()
-
+        dt = MOSCOW_TZ.localize(datetime.strptime(f"{date_str} {time_str}", "%d.%m.%Y %H:%M"))
     except ValueError:
-        await message.answer("❌ Неверный формат времени. Используйте формат ЧЧ:ММ (например, 09:00)")
+        await message.answer("⚠️ Неверный формат даты или времени. Пример: 15.10.2025 20:30")
+        return
+    except Exception as e:
+        await message.answer(f"⚠️ Ошибка: {e}")
+        return
+
+    try:
+        async with db_pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO reminders (user_id, reminder_time, text, enabled)
+                VALUES ($1, $2, $3, TRUE)
+                """,
+                message.from_user.id, dt, reminder_text
+            )
+        await message.answer(f"✅ Напоминание установлено на {date_str} в {time_str}: {reminder_text}")
     except Exception as e:
         await message.answer(f"❌ Ошибка при сохранении напоминания: {e}")
 
-    # простая валидация формата
-    import re
-    if not re.match(r"^\d{2}:\d{2}$", time_text):
-        await message.answer("⚠️ Неверный формат. Введите время в формате HH:MM, например 07:30.")
-        return
-
-    async with db_pool.acquire() as conn:
-        await conn.execute("""
-            INSERT INTO reminders (user_id, time, enabled)
-            VALUES ($1, $2, TRUE)
-            ON CONFLICT (user_id)
-            DO UPDATE SET time = EXCLUDED.time, enabled = TRUE
-        """, user_id, time_text)
-
-    await message.answer(f"✅ Напоминание установлено на {time_text}. Я напомню вам о тренировке 💪", reply_markup=main_kb())
     await state.clear()
 
 @dp.message(lambda m: m.text == "🔕 Выключить напоминания")
@@ -726,6 +718,7 @@ async def reminders_menu(message: types.Message):
 
 
 
+
 #статистика
 @dp.message(lambda m: m.text == "📊 Статистика")
 async def show_statistics(message: types.Message):
@@ -792,48 +785,29 @@ async def restart_bot(message: types.Message):
 from datetime import datetime
 import asyncio
 
+import pytz
+from datetime import datetime, timedelta
+
+# Часовой пояс — например, Москва
+MOSCOW_TZ = pytz.timezone("Europe/Moscow")
+
 async def reminder_scheduler(bot):
-    """Планировщик напоминаний о тренировках."""
-    global db_pool
-    sent_today = set()  # (user_id, time_str)
-
     while True:
-        if db_pool is None:
-            await asyncio.sleep(5)
-            continue
-
-        now = datetime.now()
-        now_str = now.strftime("%H:%M")  # текущее время HH:MM
-
-        try:
-            async with db_pool.acquire() as conn:
-                reminders = await conn.fetch("SELECT user_id, time FROM reminders WHERE enabled = TRUE")
+        now = datetime.now(MOSCOW_TZ).replace(second=0, microsecond=0)
+        async with db_pool.acquire() as conn:
+            reminders = await conn.fetch("""
+                SELECT id, user_id, text FROM reminders
+                WHERE enabled = TRUE AND reminder_time <= $1
+            """, now)
 
             for r in reminders:
-                reminder_time_str = str(r["time"])[:5]  # используем данные из базы
-                key = (r["user_id"], reminder_time_str)
+                try:
+                    await bot.send_message(r["user_id"], r["text"])
+                    await conn.execute("UPDATE reminders SET enabled = FALSE WHERE id = $1", r["id"])
+                except Exception as e:
+                    print(f"❌ Ошибка при отправке напоминания пользователю {r['user_id']}: {e}")
 
-                if reminder_time_str == now_str and key not in sent_today:
-                    try:
-                        await bot.send_message(
-                            r["user_id"],
-                            "🏋️ Время тренировки! Не забудьте разминку 💪"
-                        )
-                        print(f"✅ Напоминание отправлено пользователю {r['user_id']} в {now_str}")
-                        sent_today.add(key)
-                    except Exception as e:
-                        print(f"❌ Ошибка отправки уведомления пользователю {r['user_id']}: {e}")
-
-            # Сброс sent_today в полночь
-            if now.hour == 0 and now.minute == 0:
-                sent_today.clear()
-
-        except Exception as e:
-            print(f"❌ Ошибка планировщика: {e}")
-
-        await asyncio.sleep(10)  # проверяем каждые 10 секунд
-
-
+        await asyncio.sleep(30)  # проверяем каждые 30 секунд
 
 
 # ===== Запуск =====
