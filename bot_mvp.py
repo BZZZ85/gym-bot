@@ -339,8 +339,10 @@ async def ask_time(message: types.Message, state: FSMContext):
 
 MOSCOW_TZ = pytz.timezone("Europe/Moscow")
 
-@dp.message(Command("add_reminder"))
-async def add_reminder(message: types.Message, state: FSMContext):
+@dp.message(lambda m: m.text.startswith("напомни"))
+async def add_reminder(message: types.Message):
+    # твоя логика
+
     # Пример команды:
     # /add_reminder 15.10.2025 20:30 Сделать тренировку 💪
     parts = message.text.split(maxsplit=3)
