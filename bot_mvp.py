@@ -792,28 +792,42 @@ async def restart_bot(message: types.Message):
 from datetime import datetime
 import asyncio
 
+import pytz
+from datetime import datetime, timedelta
+
+# Часовой пояс — например, Москва
+MOSCOW_TZ = pytz.timezone("Europe/Moscow")
+
 async def reminder_scheduler(bot):
-    """Планировщик напоминаний о тренировках."""
+    """Планировщик напоминаний с учётом локального времени."""
     global db_pool
-    sent_today = set()  # (user_id, time_str)
+    sent_today = set()
 
     while True:
         if db_pool is None:
             await asyncio.sleep(5)
             continue
 
-        now = datetime.now()
-        now_str = now.strftime("%H:%M")  # текущее время HH:MM
+        # текущее время в Москве
+        now = datetime.now(MOSCOW_TZ)
+        now_str = now.strftime("%H:%M")
 
         try:
             async with db_pool.acquire() as conn:
                 reminders = await conn.fetch("SELECT user_id, time FROM reminders WHERE enabled = TRUE")
 
             for r in reminders:
-                reminder_time_str = str(r["time"])[:5]  # используем данные из базы
-                key = (r["user_id"], reminder_time_str)
+                reminder_time = str(r["time"]).strip()[:5]
 
-                if reminder_time_str == now_str and key not in sent_today:
+                # нормализуем формат времени (например, "9:5" -> "09:05")
+                try:
+                    reminder_time = datetime.strptime(reminder_time, "%H:%M").strftime("%H:%M")
+                except Exception:
+                    continue
+
+                key = (r["user_id"], reminder_time)
+
+                if reminder_time == now_str and key not in sent_today:
                     try:
                         await bot.send_message(
                             r["user_id"],
@@ -824,14 +838,14 @@ async def reminder_scheduler(bot):
                     except Exception as e:
                         print(f"❌ Ошибка отправки уведомления пользователю {r['user_id']}: {e}")
 
-            # Сброс sent_today в полночь
+            # очищаем в полночь
             if now.hour == 0 and now.minute == 0:
                 sent_today.clear()
 
         except Exception as e:
-            print(f"❌ Ошибка планировщика: {e}")
+            print(f"❌ Ошибка в reminder_scheduler: {e}")
 
-        await asyncio.sleep(10)  # проверяем каждые 10 секунд
+        await asyncio.sleep(20)
 
 
 
