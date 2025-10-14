@@ -339,38 +339,7 @@ async def ask_time(message: types.Message, state: FSMContext):
 
 MOSCOW_TZ = pytz.timezone("Europe/Moscow")
 
-@dp.message(lambda m: m.text.startswith("напомни"))
-async def add_reminder(message: types.Message, state: FSMContext):
-    """
-    Команда: напомни DD.MM.YYYY HH:MM текст
-    Пример: напомни 15.10.2025 20:30 Сделать тренировку 💪
-    """
-    parts = message.text.split(maxsplit=3)
-    if len(parts) < 4:
-        await message.answer("❌ Используй формат: напомни DD.MM.YYYY HH:MM текст")
-        return
 
-    date_str, time_str, reminder_text = parts[1], parts[2], parts[3]
-
-    try:
-        # Конвертируем в timezone-aware datetime
-        dt_naive = datetime.strptime(f"{date_str} {time_str}", "%d.%m.%Y %H:%M")
-        dt = MOSCOW_TZ.localize(dt_naive)
-    except ValueError:
-        await message.answer("⚠️ Неверный формат даты или времени. Пример: 15.10.2025 20:30")
-        return
-
-    try:
-        async with db_pool.acquire() as conn:
-            await conn.execute("""
-                INSERT INTO reminders (user_id, reminder_time, text, enabled)
-                VALUES ($1, $2, $3, TRUE)
-            """, message.from_user.id, dt, reminder_text)
-        await message.answer(f"✅ Напоминание установлено на {date_str} в {time_str}: {reminder_text}")
-    except Exception as e:
-        await message.answer(f"❌ Ошибка при сохранении напоминания: {e}")
-
-    await state.clear()
 
 @dp.message(lambda m: m.text == "🔕 Выключить напоминания")
 async def disable_reminders(message: types.Message):
@@ -778,38 +747,83 @@ async def restart_bot(message: types.Message):
 
 
 # ===== Планировщик напоминаний =====
-from datetime import datetime
-import asyncio
 
-import pytz
-from datetime import datetime, timedelta
 
 # Часовой пояс — например, Москва
 MOSCOW_TZ = pytz.timezone("Europe/Moscow")
+# ===== Функция добавления напоминания =====
+async def add_reminder_to_db(user_id: int, date_str: str, time_str: str, text: str, db_pool):
+    try:
+        # Конвертируем в naive datetime
+        dt_naive = datetime.strptime(f"{date_str} {time_str}", "%d.%m.%Y %H:%M")
+    except ValueError:
+        raise ValueError("Неверный формат даты или времени. Используй DD.MM.YYYY HH:MM")
 
-async def reminder_scheduler(bot: Bot):
+    async with db_pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO reminders (user_id, reminder_time, text, enabled)
+            VALUES ($1, $2, $3, TRUE)
+        """, user_id, dt_naive, text)
+
+
+# ===== Планировщик напоминаний =====
+async def reminder_scheduler(bot: Bot, db_pool):
     """
     Проверяет базу каждую минуту и отправляет напоминания.
     """
     while True:
-        now = datetime.now(MOSCOW_TZ).replace(second=0, microsecond=0)
+        # Текущее время (naive, без tzinfo)
+        now = datetime.now().replace(second=0, microsecond=0)
+
         async with db_pool.acquire() as conn:
+            # Берем все напоминания на текущую минуту
             reminders = await conn.fetch("""
                 SELECT id, user_id, text FROM reminders
-                WHERE enabled = TRUE AND reminder_time = $1
-            """, now)
+                WHERE enabled = TRUE
+                  AND reminder_time >= $1
+                  AND reminder_time < $2
+            """, now, now + timedelta(minutes=1))
 
             for r in reminders:
                 try:
                     await bot.send_message(r["user_id"], r["text"])
+                    # Деактивируем напоминание после отправки
                     await conn.execute("UPDATE reminders SET enabled = FALSE WHERE id = $1", r["id"])
                 except Exception as e:
                     print(f"❌ Ошибка при отправке напоминания пользователю {r['user_id']}: {e}")
 
-        # Проверка каждую минуту
+        # Проверяем каждую минуту
         await asyncio.sleep(60)
 
 
+# ===== Пример использования в Aiogram =====
+from aiogram import Dispatcher, types
+from aiogram.fsm.context import FSMContext
+
+dp = Dispatcher()
+
+@dp.message(lambda m: m.text.startswith("напомни"))
+async def add_reminder(message: types.Message, state: FSMContext):
+    """
+    Команда: напомни DD.MM.YYYY HH:MM текст
+    Пример: напомни 15.10.2025 20:30 Сделать тренировку 💪
+    """
+    parts = message.text.split(maxsplit=3)
+    if len(parts) < 4:
+        await message.answer("❌ Используй формат: напомни DD.MM.YYYY HH:MM текст")
+        return
+
+    date_str, time_str, reminder_text = parts[1], parts[2], parts[3]
+
+    try:
+        await add_reminder_to_db(message.from_user.id, date_str, time_str, reminder_text, db_pool)
+        await message.answer(f"✅ Напоминание установлено на {date_str} в {time_str}: {reminder_text}")
+    except ValueError as e:
+        await message.answer(f"⚠️ {e}")
+    except Exception as e:
+        await message.answer(f"❌ Ошибка при сохранении напоминания: {e}")
+
+    await state.clear()
 
 async def main():
     await create_db_pool()  # подключение к базе
