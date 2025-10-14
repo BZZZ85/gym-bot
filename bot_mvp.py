@@ -752,6 +752,9 @@ async def reminders_menu(message: types.Message):
         reply_markup=markup
     )
 
+@dp.message(lambda m: m.text == "⬅️ Назад")
+async def back_to_main_from_reminders(message: types.Message, state: FSMContext):
+    await start(message, state)
 
 
 
