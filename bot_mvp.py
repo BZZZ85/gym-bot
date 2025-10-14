@@ -70,14 +70,7 @@ async def init_db():
                 username TEXT
             )
         """)
-        await conn.execute("""
-        CREATE TABLE IF NOT EXISTS reminders (
-            user_id BIGINT PRIMARY KEY,
-            time TIME,
-            enabled BOOLEAN DEFAULT TRUE
-        );
-        """)
-     
+        
         # ===== Таблица упражнений =====
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS exercises (
@@ -115,11 +108,14 @@ async def init_db():
         # ===== Таблица напоминаний =====
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS reminders (
-            user_id BIGINT PRIMARY KEY,
-            time TEXT,                -- время напоминания (например, "09:00")
+            id SERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL,
+            reminder_time TIMESTAMP NOT NULL,
+            text TEXT DEFAULT '🏋️ Время тренировки! Не забудь позаниматься 💪',
             enabled BOOLEAN DEFAULT TRUE
-    )
+    );
 """)
+
         
 
 
@@ -341,31 +337,31 @@ async def ask_time(message: types.Message, state: FSMContext):
     await message.answer("🕒 Введите время напоминания в формате HH:MM (например, 09:00):")
     await state.set_state(ReminderState.waiting_for_time)
 
-@dp.message(ReminderState.waiting_for_time)
-async def save_reminder_time(message: types.Message, state: FSMContext):
-    time_text = message.text.strip()
-    user_id = message.from_user.id
-
+@dp.message(lambda m: m.text.startswith("напомни"))
+async def add_reminder(message: types.Message):
     try:
-        # Преобразуем текст в объект времени
-        reminder_time = datetime.strptime(time_text, "%H:%M").time()
+        # Пример: "напомни 15.10.2025 20:30 сходить в зал"
+        text = message.text.split(" ", 1)[1]
+        parts = text.split(" ", 2)
+        date_str, time_str = parts[0], parts[1]
+        note = parts[2] if len(parts) > 2 else "🏋️ Время тренировки! Не забудь позаниматься 💪"
+
+        dt = datetime.strptime(f"{date_str} {time_str}", "%d.%m.%Y %H:%M")
 
         async with db_pool.acquire() as conn:
             await conn.execute("""
-                INSERT INTO reminders (user_id, time, enabled)
-                VALUES ($1, $2, TRUE)
-                ON CONFLICT (user_id) DO UPDATE
-                SET time = EXCLUDED.time,
-                    enabled = TRUE
-            """, user_id, reminder_time.strftime("%H:%M"))
+                INSERT INTO reminders (user_id, reminder_time, text)
+                VALUES ($1, $2, $3)
+            """, message.from_user.id, dt, note)
 
-        await message.answer(f"✅ Напоминание установлено на {time_text}")
-        await state.clear()
-
-    except ValueError:
-        await message.answer("❌ Неверный формат времени. Используйте формат ЧЧ:ММ (например, 09:00)")
+        await message.answer(f"✅ Напоминание установлено на {dt.strftime('%d.%m.%Y %H:%M')}")
     except Exception as e:
-        await message.answer(f"❌ Ошибка при сохранении напоминания: {e}")
+        await message.answer(
+            "⚠️ Неверный формат. Используй пример:\n"
+            "`напомни 15.10.2025 20:30 сходить в зал`",
+            parse_mode="Markdown"
+        )
+
 
     # простая валидация формата
     import re
@@ -722,22 +718,7 @@ async def reminders_menu(message: types.Message):
         "Вы можете установить время или отключить уведомления.",
         reply_markup=markup
     )
-@dp.message(lambda m: m.text.startswith("напомни"))
-async def add_reminder(message: types.Message):
-    try:
-        # Пример формата: "напомни 15.10.2025 20:30"
-        text = message.text.split(" ", 1)[1]
-        dt = datetime.strptime(text, "%d.%m.%Y %H:%M")
-        
-        async with db_pool.acquire() as conn:
-            await conn.execute("""
-                INSERT INTO reminders (user_id, reminder_time)
-                VALUES ($1, $2)
-            """, message.from_user.id, dt)
-        
-        await message.answer(f"✅ Напоминание установлено на {dt.strftime('%d.%m.%Y %H:%M')}")
-    except Exception as e:
-        await message.answer("⚠️ Формат неверный. Используй пример:\n`напомни 15.10.2025 20:30`", parse_mode="Markdown")
+
 
 
 
@@ -826,12 +807,12 @@ async def reminder_scheduler(bot):
             for r in reminders:
                 try:
                     await bot.send_message(r["user_id"], r["text"])
-                    # После отправки можно отключить напоминание
                     await conn.execute("UPDATE reminders SET enabled = FALSE WHERE id = $1", r["id"])
                 except Exception as e:
-                    print("❌ Ошибка при отправке напоминания:", e)
-        
+                    print(f"❌ Ошибка при отправке напоминания пользователю {r['user_id']}: {e}")
+
         await asyncio.sleep(60)
+
 
 
 
