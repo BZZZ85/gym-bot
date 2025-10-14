@@ -16,6 +16,8 @@ from datetime import datetime
 from aiogram import types
 from aiogram.types import FSInputFile
 from datetime import datetime, timedelta, time
+from aiogram.filters import StateFilter, Command
+
 
 # Загружаем локальный .env только если он есть
 if os.path.exists("ton.env"):
