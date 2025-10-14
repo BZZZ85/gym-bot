@@ -148,7 +148,6 @@ async def add_exercise_to_db(user_id, exercise_text, approach=1, reps="", weight
             """,
             user_id, exercise_text.strip(), approach, reps, " ".join(map(str, weights)) if weights else None
         )
-MOSCOW_TZ = pytz.timezone("Europe/Moscow")
 def parse_exercise_input(text: str):
     """
     Пример ввода: "Жим лежа 3 10 12 15 60"
@@ -331,7 +330,8 @@ async def add_approach_button(message: types.Message, state: FSMContext):
     kb = exercises_kb(exercises)
     await message.answer("Выберите упражнение или добавьте новое:", reply_markup=kb)
     await state.set_state(AddApproachStates.waiting_for_exercise)
-
+# Глобально в начале файла
+MOSCOW_TZ = pytz.timezone("Europe/Moscow")
 @dp.message(lambda m: m.text == "🔔 Установить время напоминания")
 async def ask_time(message: types.Message, state: FSMContext):
     await message.answer("🕒 Введите время напоминания в формате HH:MM (например, 09:00):")
