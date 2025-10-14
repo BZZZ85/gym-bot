@@ -70,13 +70,7 @@ async def init_db():
                 username TEXT
             )
         """)
-        await conn.execute("""
-        CREATE TABLE IF NOT EXISTS reminders (
-            user_id BIGINT PRIMARY KEY,
-            time TIME,
-            enabled BOOLEAN DEFAULT TRUE
-        );
-        """)
+    
      
         # ===== Таблица упражнений =====
         await conn.execute("""
