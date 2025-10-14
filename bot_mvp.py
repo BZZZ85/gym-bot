@@ -812,11 +812,11 @@ MOSCOW_TZ = pytz.timezone("Europe/Moscow")
 
 async def reminder_scheduler(bot):
     while True:
-        now = datetime.now().replace(second=0, microsecond=0)
+        now = datetime.now(MOSCOW_TZ).replace(second=0, microsecond=0)
         async with db_pool.acquire() as conn:
             reminders = await conn.fetch("""
                 SELECT id, user_id, text FROM reminders
-                WHERE enabled = TRUE AND reminder_time = $1
+                WHERE enabled = TRUE AND reminder_time <= $1
             """, now)
 
             for r in reminders:
@@ -827,6 +827,7 @@ async def reminder_scheduler(bot):
                     print(f"❌ Ошибка при отправке напоминания пользователю {r['user_id']}: {e}")
 
         await asyncio.sleep(60)
+
 
 
 
