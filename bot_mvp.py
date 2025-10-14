@@ -793,36 +793,21 @@ MOSCOW_TZ = pytz.timezone("Europe/Moscow")
 
 async def reminder_scheduler(bot):
     while True:
-        # Текущее московское время, округлённое до минуты
         now = datetime.now(MOSCOW_TZ).replace(second=0, microsecond=0)
-
         async with db_pool.acquire() as conn:
-            # выбираем все включённые напоминания, время которых <= now
-            reminders = await conn.fetch(
-                """
-                SELECT id, user_id, text 
-                FROM reminders
+            reminders = await conn.fetch("""
+                SELECT id, user_id, text FROM reminders
                 WHERE enabled = TRUE AND reminder_time <= $1
-                """,
-                now
-            )
+            """, now)
 
             for r in reminders:
                 try:
                     await bot.send_message(r["user_id"], r["text"])
-                    # отключаем отправленное напоминание
                     await conn.execute("UPDATE reminders SET enabled = FALSE WHERE id = $1", r["id"])
                 except Exception as e:
                     print(f"❌ Ошибка при отправке напоминания пользователю {r['user_id']}: {e}")
 
-        await asyncio.sleep(60)  # проверяем каждую минуту
-
-
-
-
-
-
-
+        await asyncio.sleep(30)  # проверяем каждые 30 секунд
 
 
 # ===== Запуск =====
