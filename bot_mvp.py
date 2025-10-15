@@ -18,6 +18,8 @@ from aiogram import types
 from aiogram.types import FSInputFile
 from datetime import datetime, timedelta, time
 import pytz
+from aiogram.types import Message
+
 # Загружаем локальный .env только если он есть
 if os.path.exists("ton.env"):
     load_dotenv("ton.env")
