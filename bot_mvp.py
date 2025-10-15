@@ -183,7 +183,7 @@ async def progress_command(message: Message):
         print(f"❌ Ошибка при анализе прогресса: {e}")
         await message.answer("❌ Не удалось получить прогресс. Проверь, есть ли записи для этого упражнения.")
 @dp.message(lambda message: message.text == "📈 Прогресс")
-async def progress_button_handler(message: Message):
+async def progress_button_handler(message: Message, state: FSMContext):
     user_id = message.from_user.id
     async with db_pool.acquire() as conn:
         rows = await conn.fetch("""
@@ -192,7 +192,7 @@ async def progress_button_handler(message: Message):
         """, user_id)
         exercises = [r["exercise"] for r in rows]
 
-    await show_progress_menu(message, exercises)
+    await show_progress_menu(message, exercises, state)
 
 
 def parse_exercise_input(text: str):
@@ -728,21 +728,14 @@ class ProgressStates(StatesGroup):
 # ===== Обработчик кнопки 📈 Прогресс =====
 # ===== Обработчик кнопки 📈 Прогресс =====
 @dp.message(lambda m: m.text == "📈 Прогресс")
-async def show_progress_menu(message: Message, exercises):
-    if not exercises:
-        await message.answer("📭 У тебя пока нет сохранённых упражнений.")
-        return
+async def show_progress_menu(message: Message, exercises: list, state: FSMContext):
+    """
+    Показать меню выбора упражнения для анализа прогресса.
+    """
+    keyboard = [[KeyboardButton(text=ex)] for ex in exercises] + [[KeyboardButton(text="↩ В меню")]]
+    markup = ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
-    keyboard = [
-        [KeyboardButton(text=ex)] for ex in exercises if ex
-    ] + [[KeyboardButton(text="↩ В меню")]]
-
-    await message.answer(
-        "Выбери упражнение, чтобы увидеть свой прогресс 💪",
-        reply_markup=ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
-    )
-
-
+    await message.answer("Выбери упражнение:", reply_markup=markup)
     await state.set_state(ShowProgressStates.waiting_for_exercise)
 
 
