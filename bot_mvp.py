@@ -571,12 +571,15 @@ async def process_exercise(message: types.Message, state: FSMContext):
         await message.answer("❗ Выберите упражнение из списка или добавьте новое.")
         return
 
-    # Показываем умную подсказку
-    suggestion = await suggest_next_progress(user_id, text)
-    await message.answer(suggestion, parse_mode="HTML")
-
+    # Сохраняем выбранное упражнение в state
     await state.update_data(exercise=text)
+
+    # --- убираем показ прогресса ---
+    # await suggest_next_progress(...) <-- удаляем
+
+    # Просто спрашиваем количество подходов
     await ask_for_sets(message, state)
+
 
 
 
