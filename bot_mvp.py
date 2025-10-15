@@ -807,7 +807,11 @@ async def show_selected_progress(message: types.Message, state: FSMContext):
 
 
 async def show_progress_graph_for_exercise(message: types.Message, exercise: str, recs: list):
-   
+    import matplotlib.pyplot as plt
+    from aiogram.types import FSInputFile
+    import re
+    import os
+
     if not recs:
         await message.answer("Нет данных для отображения прогресса.", reply_markup=main_kb())
         return
@@ -883,6 +887,7 @@ async def show_progress_graph_for_exercise(message: types.Message, exercise: str
 
     if os.path.exists(filename):
         os.remove(filename)
+
 
 
 
