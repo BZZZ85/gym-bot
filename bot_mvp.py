@@ -304,7 +304,6 @@ async def get_user_records(user_id):
         return rows
 AVAILABLE_WEIGHTS = [20, 15, 10, 5, 2.5, 1.25]
 
-AVAILABLE_WEIGHTS = [20, 15, 10, 5, 2.5, 1.25]
 
 def round_to_available_weight(weight: float) -> float:
     """
@@ -314,8 +313,7 @@ def round_to_available_weight(weight: float) -> float:
     closest = min(AVAILABLE_WEIGHTS, key=lambda x: abs(x - weight))
     return round(closest, 2)
 
-async def suggest_next_progress_real_weight(user_id: int, exercise: str) -> str:
-    # Получаем последние подходы пользователя
+
 async def suggest_next_progress_by_sets(user_id: int, exercise: str) -> str:
     """
     Возвращает рекомендации по весам на каждый подход на следующей тренировке.
