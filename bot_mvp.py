@@ -182,17 +182,18 @@ async def progress_command(message: Message):
     except Exception as e:
         print(f"❌ Ошибка при анализе прогресса: {e}")
         await message.answer("❌ Не удалось получить прогресс. Проверь, есть ли записи для этого упражнения.")
-@dp.message(F.text.lower() == "📈 прогресс")
+@dp.message(lambda message: message.text == "📈 Прогресс")
 async def progress_button_handler(message: Message):
     user_id = message.from_user.id
     async with db_pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT DISTINCT name FROM exercises
-            WHERE user_id = $1 AND name IS NOT NULL AND name != ''
+            SELECT DISTINCT exercise FROM exercises
+            WHERE user_id = $1 AND exercise IS NOT NULL AND exercise != ''
         """, user_id)
-        exercises = [r["name"] for r in rows]
+        exercises = [r["exercise"] for r in rows]
 
     await show_progress_menu(message, exercises)
+
 
 def parse_exercise_input(text: str):
     """
