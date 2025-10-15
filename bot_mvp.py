@@ -312,9 +312,9 @@ def round_weight_up(weight: float) -> float:
             return b
     return max(BLIN_WEIGHTS)
 
-async def  suggest_next_progress(user_id: int, exercise: str):
+async def suggest_next_progress(user_id: int, exercise: str):
     """
-    Анализ последних тренировок и предложение веса для каждого подхода.
+    Универсальная функция для анализа прогресса упражнения.
     """
     async with db_pool.acquire() as conn:
         records = await conn.fetch("""
@@ -329,8 +329,13 @@ async def  suggest_next_progress(user_id: int, exercise: str):
         return "Ты ещё не выполнял это упражнение 💪 Начни с комфортного веса для техники."
 
     last_record = records[0]
+
+    # Защита от None
+    if not last_record["weight"]:
+        return "⚠️ У последней записи нет веса. Сначала добавь вес к упражнению."
+
     weights = [float(w) for w in last_record["weight"].split()]
-    reps = [int(r) for r in last_record["reps"].split()]
+    reps = [int(r) for r in last_record["reps"].split()] if last_record["reps"] else [0]*len(weights)
 
     new_weights = []
     for w, r in zip(weights, reps):
@@ -340,22 +345,25 @@ async def  suggest_next_progress(user_id: int, exercise: str):
             w_new = w * 0.93   # -7%
         else:
             w_new = w
-        new_weights.append(round_weight_up(round(w_new, 2)))
+        new_weights.append(round(w_new, 1))
 
     # Формируем текст отчёта
     msg_lines = [f"🏋️ Прогресс: {exercise.upper()}\n"]
     for rec in reversed(records):
+        rec_weights = rec["weight"].split() if rec["weight"] else ["0"]*len(reps)
+        rec_reps = rec["reps"].split() if rec["reps"] else ["0"]*len(rec_weights)
         msg_lines.append(
-            f"{rec['created_at'].strftime('%d-%m-%Y')} — подходы: {len(rec['weight'].split())} | "
-            f"повторений: {'-'.join(rec['reps'].split())} | "
-            f"вес(кг): {'-'.join(rec['weight'].split())}"
+            f"{rec['created_at'].strftime('%d-%m-%Y')} — подходы: {len(rec_weights)} | "
+            f"повторений: {'-'.join(rec_reps)} | "
+            f"вес(кг): {'-'.join(rec_weights)}"
         )
 
-    msg_lines.append("\n💡 Рекомендуемый вес для следующей тренировки:")
+    msg_lines.append("\n💡 Рекомендуемый вес для следующей тренировки по подходам:")
     for i, w in enumerate(new_weights, start=1):
         msg_lines.append(f"Подход {i}: {w} кг")
 
     return "\n".join(msg_lines)
+
 
 
 
