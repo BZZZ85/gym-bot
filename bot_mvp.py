@@ -306,17 +306,26 @@ BLIN_WEIGHTS = [1, 1.25, 2.5, 5, 10, 15, 20]  # доступные блины
 
 def round_weight_up(weight: float) -> float:
     """
-    Округляет вес до ближайшего доступного сверху.
+    Округляем вес вверх до ближайшего доступного, составленного из блинов.
     """
-    for b in sorted(BLIN_WEIGHTS):
-        if weight <= b:
-            return b
-    return max(BLIN_WEIGHTS)
+    total = 0
+    remaining = weight
+    result = []
+    for b in sorted(BLIN_WEIGHTS, reverse=True):
+        while remaining >= b:
+            result.append(b)
+            remaining -= b
+    if remaining > 0:
+        for b in sorted(BLIN_WEIGHTS):
+            if b >= remaining:
+                result.append(b)
+                break
+    return round(sum(result), 1)
 
 
 async def suggest_next_progress_by_sets(user_id: int, exercise: str):
     """
-    Анализирует последние тренировки по упражнению и предлагает оптимальные веса по подходам.
+    Анализирует последние тренировки и предлагает оптимальные веса по подходам.
     """
     async with db_pool.acquire() as conn:
         records = await conn.fetch("""
@@ -324,16 +333,18 @@ async def suggest_next_progress_by_sets(user_id: int, exercise: str):
             FROM exercises
             WHERE user_id=$1 AND exercise=$2
             ORDER BY created_at DESC
-            LIMIT 2
+            LIMIT 3
         """, user_id, exercise)
 
     if not records:
         return "Ты ещё не выполнял это упражнение 💪\nНачни с комфортного веса для техники."
 
+    # Берём последнюю тренировку
     last_record = records[0]
     weights = [float(w) for w in last_record["weight"].split()]
     reps = [int(r) for r in last_record["reps"].split()]
 
+    # Вычисляем новый вес по подходам
     new_weights = []
     for w, r in zip(weights, reps):
         if r >= 10:
@@ -342,22 +353,22 @@ async def suggest_next_progress_by_sets(user_id: int, exercise: str):
             w_new = w * 0.93  # -7%
         else:
             w_new = w  # оставить тот же вес
-        new_weights.append(round_weight(w_new))
+        new_weights.append(round_weight_up(w_new))
 
-    # Создаём сообщение
+    # Формируем сообщение
     msg_lines = [f"🏋️ Прогресс: {exercise.upper()}\n"]
     for rec in reversed(records):
-        msg_lines.append(
-            f"{rec['created_at'].strftime('%d-%m-%Y')} — подходы: {len(rec['weight'].split())} | "
-            f"повторений: {'-'.join(rec['reps'].split())} | "
-            f"вес(кг): {'-'.join(rec['weight'].split())}"
-        )
+        date_str = rec['created_at'].strftime('%d-%m-%Y')
+        weights_str = "-".join(rec['weight'].split())
+        reps_str = "-".join(rec['reps'].split())
+        msg_lines.append(f"{date_str} — подходы: {len(weights)} | повторений: {reps_str} | вес(кг): {weights_str}")
 
-    msg_lines.append("\n💡 Предлагаемый вес для следующей тренировки:")
+    msg_lines.append("\n💡 Рекомендованный вес для следующей тренировки:")
     for i, w in enumerate(new_weights, start=1):
         msg_lines.append(f"Подход {i}: {w} кг")
 
     return "\n".join(msg_lines)
+
 
 
 
