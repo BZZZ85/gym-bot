@@ -314,8 +314,8 @@ def round_weight_up(weight: float) -> float:
 
 async def suggest_next_progress(user_id: int, exercise: str):
     """
-    Анализ последних записей упражнения и предложение веса для следующей тренировки.
-    Берёт данные из records, обрабатывает None веса.
+    Анализ всех записей упражнения и предложение веса для следующей тренировки.
+    Берёт данные из records, учитывает все подходы и повторения.
     """
     async with db_pool.acquire() as conn:
         records = await conn.fetch("""
@@ -323,61 +323,52 @@ async def suggest_next_progress(user_id: int, exercise: str):
             FROM records
             WHERE user_id = $1 AND exercise = $2
             ORDER BY date DESC
-            LIMIT 2
+            LIMIT 5
         """, user_id, exercise)
 
     if not records:
         return "Ты ещё не выполнял это упражнение 💪 Начни с комфортного веса для техники."
 
-    last_record = records[0]
+    report_lines = [f"🏋️ Прогресс: {exercise.upper()}\n"]
 
-    # Количество подходов
-    sets = last_record["sets"] or 3
+    # Собираем все веса и повторения для расчёта новых
+    last_weights = []
 
-    # Повторения
-    try:
-        reps = [int(r) for r in last_record["reps"].split()]
-    except Exception:
-        reps = [10] * sets  # если нет данных, ставим 10
+    for r in reversed(records):  # идём от старых к новым
+        date_str = r["date"].strftime("%d-%m-%Y")
+        reps_list = [int(x) for x in r["reps"].split()] if r["reps"] else [0] * r["sets"]
+        weights_list = [float(x) for x in r["weight"].split()] if r["weight"] else [0] * r["sets"]
 
-    # Вес
-    try:
-        weights = [float(w) for w in last_record["weight"].split()]
-    except Exception:
-        weights = [20.0] * sets  # дефолтный вес, если None
+        # Дублируем последний вес, если меньше подходов
+        while len(weights_list) < len(reps_list):
+            weights_list.append(weights_list[-1] if weights_list else 0)
 
-    # Если подходов больше, чем весов/повторений, дублируем последний
-    while len(weights) < sets:
-        weights.append(weights[-1])
-    while len(reps) < sets:
-        reps.append(reps[-1])
+        last_weights = weights_list  # обновляем для рекомендаций
 
-    # Рассчёт рекомендованного веса
+        report_lines.append(
+            f"{date_str} — подходы: {r['sets']} | повторений: {'-'.join(map(str, reps_list))} | вес(кг): {'-'.join(map(str, weights_list))}"
+        )
+
+    # ===== Рекомендации для следующей тренировки =====
     new_weights = []
-    for w, r in zip(weights, reps):
+    for i, w in enumerate(last_weights):
+        r = reps_list[i] if i < len(reps_list) else reps_list[-1]
         if r >= 10:
             w_new = w * 1.025  # +2.5%
         elif r <= 6:
             w_new = w * 0.93   # -7%
         else:
             w_new = w
-        new_weights.append(round(w_new, 1))
-
-    # Формируем отчёт
-    report_lines = [f"🏋️ Прогресс: {exercise.upper()}\n"]
-    for r in reversed(records):
-        date_str = r["date"].strftime("%d-%m-%Y")
-        r_list = r["reps"].split() if r["reps"] else ["0"] * r["sets"]
-        w_list = r["weight"].split() if r["weight"] else ["0"] * r["sets"]
-        report_lines.append(
-            f"{date_str} — подходы: {r['sets']} | повторений: {'-'.join(r_list)} | вес(кг): {'-'.join(w_list)}"
-        )
+        # округление до 0.5 кг
+        w_new = round(w_new * 2) / 2
+        new_weights.append(w_new)
 
     report_lines.append("\n💡 Рекомендуемый вес для следующей тренировки по подходам:")
-    for i, w in enumerate(new_weights, start=1):
-        report_lines.append(f"Подход {i}: {w} кг")
+    for idx, w in enumerate(new_weights, start=1):
+        report_lines.append(f"Подход {idx}: {w} кг")
 
     return "\n".join(report_lines)
+
 
 
 
