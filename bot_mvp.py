@@ -563,22 +563,22 @@ async def process_exercise(message: types.Message, state: FSMContext):
         return
 
     exercises = [ex.lower() for ex in await get_exercises(user_id) if ex]
+
     if text == "➕ Добавить новое упражнение":
         await message.answer("Введите название нового упражнения:")
         await state.set_state(AddApproachStates.waiting_for_new_exercise)
         return
-    elif text.lower() not in exercises:
+
+    if text.lower() not in exercises:
         await message.answer("❗ Выберите упражнение из списка или добавьте новое.")
         return
 
-    # Сохраняем выбранное упражнение в state
+    # Просто сохраняем выбранное упражнение
     await state.update_data(exercise=text)
 
-    # --- убираем показ прогресса ---
-    # await suggest_next_progress(...) <-- удаляем
-
-    # Просто спрашиваем количество подходов
+    # НЕ показываем прогресс — сразу спрашиваем количество подходов
     await ask_for_sets(message, state)
+
 
 
 
