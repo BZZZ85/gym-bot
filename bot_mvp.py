@@ -807,60 +807,62 @@ async def show_selected_progress(message: types.Message, state: FSMContext):
 
 
 async def show_progress_graph_for_exercise(message: types.Message, exercise: str, recs: list):
-    dates, avg_weights = [], []
+   
+    if not recs:
+        await message.answer("Нет данных для отображения прогресса.", reply_markup=main_kb())
+        return
+
+    dates = [r['date'].strftime('%d-%m-%Y') for r in recs]
+    all_weights = []  # Список списков: веса каждого подхода для каждой даты
     report_text = f"🏋️ Прогресс: {exercise}\n\n"
 
     for r in recs:
-        date_str = r['date'].strftime('%d-%m-%Y')
-        dates.append(date_str)
-
-        # Парсим повторения
+        # Повторения
         reps = [int(x) for x in r['reps'].split()] if r['reps'] else []
-
-        # Парсим веса корректно (через пробел или дефис)
-        weights = []
-        if r.get('weight'):
-            weights = [float(w) for w in re.split(r'[\s-]+', r['weight'])]
-
-        # Если меньше весов чем повторов, дублируем последний
+        # Веса
+        weights = [float(w) for w in re.split(r'[\s-]+', r['weight'])] if r.get('weight') else []
         while len(weights) < len(reps):
             weights.append(weights[-1] if weights else 0)
-
-        avg_weight = round(sum(weights)/len(weights), 1) if weights else 0
-        avg_weights.append(avg_weight)
+        all_weights.append(weights)
 
         reps_str = "-".join(map(str, reps)) if reps else "0"
         weights_str = "-".join(map(str, weights)) if weights else "0"
-        report_text += f"{date_str} — подходы: {r['sets']} | повторений: {reps_str} | вес(кг): {weights_str}\n"
+        report_text += f"{r['date'].strftime('%d-%m-%Y')} — подходы: {r['sets']} | повторений: {reps_str} | вес(кг): {weights_str}\n"
 
-    # ====== Рекомендации по каждому подходу ======
-    recommendation = ""
-    if recs:
-        last_weights = weights  # берем веса последней записи
-        new_weights = []
-        for i, w in enumerate(last_weights):
-            r = int(reps[i]) if i < len(reps) else 0
-            if r >= 10:
-                w_new = w * 1.025  # +2.5%
-            elif r <= 6:
-                w_new = w * 0.93   # -7%
-            else:
-                w_new = w
-            # округляем до ближайшего стандартного блина
-            new_weights.append(round(w_new / 1.25) * 1.25)
+    # ===== Рекомендации по следующей тренировке =====
+    last_weights = all_weights[-1]
+    last_reps = [int(x) for x in recs[-1]['reps'].split()] if recs[-1]['reps'] else []
 
-        recommendation = "\n💡 Рекомендуемый вес для следующей тренировки по подходам:\n"
-        for idx, w in enumerate(new_weights, start=1):
-            recommendation += f"Подход {idx}: {w} кг\n"
+    recommendation = "\n💡 Рекомендуемый вес для следующей тренировки по подходам:\n"
+    new_weights = []
+    for i, w in enumerate(last_weights):
+        r = last_reps[i] if i < len(last_reps) else 0
+        if r >= 10:
+            w_new = w * 1.025
+        elif r <= 6:
+            w_new = w * 0.93
+        else:
+            w_new = w
+        new_w = round(w_new / 1.25) * 1.25
+        new_weights.append(new_w)
+        recommendation += f"Подход {i+1}: {new_w} кг\n"
 
-    # ====== График ======
-    import matplotlib.pyplot as plt
-    from aiogram.types import FSInputFile
-    fig, ax = plt.subplots(figsize=(8, 4), constrained_layout=True)
-    ax.plot(dates, avg_weights, color="orange", marker="o", label="Средний вес (кг)")
+    # ===== Построение графика =====
+    fig, ax = plt.subplots(figsize=(10, 5), constrained_layout=True)
+
+    max_approaches = max(len(w) for w in all_weights)
+
+    # Рисуем линии для каждого подхода
+    for i in range(max_approaches):
+        y = [w[i] if i < len(w) else None for w in all_weights]
+        ax.plot(dates, y, marker='o', label=f'Подход {i+1}')
+
+    # Рисуем среднюю линию
+    avg_weights = [round(sum(w)/len(w), 1) if w else 0 for w in all_weights]
+    ax.plot(dates, avg_weights, color='orange', marker='x', linestyle='--', label='Средний вес')
+
     ax.set_xlabel("Дата")
-    ax.set_ylabel("Вес (кг)", color="orange")
-    ax.tick_params(axis='y', labelcolor="orange")
+    ax.set_ylabel("Вес (кг)")
     plt.xticks(rotation=45, ha='right')
     ax.set_title(f"Прогресс: {exercise}")
     ax.legend(loc="upper left")
@@ -869,6 +871,7 @@ async def show_progress_graph_for_exercise(message: types.Message, exercise: str
     plt.savefig(filename, format='png', dpi=120)
     plt.close(fig)
 
+    # ===== Отправка фото =====
     try:
         await message.answer_photo(
             FSInputFile(filename),
@@ -880,6 +883,7 @@ async def show_progress_graph_for_exercise(message: types.Message, exercise: str
 
     if os.path.exists(filename):
         os.remove(filename)
+
 
 
 
