@@ -157,6 +157,27 @@ async def add_exercise_to_db(user_id, exercise_text, approach=1, reps="", weight
             """,
             user_id, exercise_text.strip(), approach, reps, " ".join(map(str, weights)) if weights else None
         )
+@dp.message(Command("прогресс"))
+async def progress_command(message: Message):
+    """
+    Анализ прогресса по заданному упражнению.
+    Пример: /прогресс Жим лёжа
+    """
+    user_id = message.from_user.id
+    parts = message.text.split(maxsplit=1)
+
+    if len(parts) < 2:
+        await message.answer("⚠️ Укажи упражнение после команды.\nНапример: <b>/прогресс Жим лёжа</b>")
+        return
+
+    exercise = parts[1].strip()
+
+    try:
+        suggestion = await suggest_next_progress(user_id, exercise)
+        await message.answer(suggestion, parse_mode="HTML")
+    except Exception as e:
+        print(f"❌ Ошибка при анализе прогресса: {e}")
+        await message.answer("❌ Не удалось получить прогресс. Проверь, есть ли записи для этого упражнения.")
 
 def parse_exercise_input(text: str):
     """
