@@ -2,6 +2,7 @@ import os
 import asyncio
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
