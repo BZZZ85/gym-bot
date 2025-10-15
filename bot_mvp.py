@@ -181,6 +181,17 @@ async def progress_command(message: Message):
     except Exception as e:
         print(f"❌ Ошибка при анализе прогресса: {e}")
         await message.answer("❌ Не удалось получить прогресс. Проверь, есть ли записи для этого упражнения.")
+@dp.message(F.text.lower() == "📈 прогресс")
+async def progress_button_handler(message: Message):
+    user_id = message.from_user.id
+    async with db_pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT DISTINCT name FROM exercises
+            WHERE user_id = $1 AND name IS NOT NULL AND name != ''
+        """, user_id)
+        exercises = [r["name"] for r in rows]
+
+    await show_progress_menu(message, exercises)
 
 def parse_exercise_input(text: str):
     """
@@ -728,6 +739,7 @@ async def show_progress_menu(message: Message, exercises):
         "Выбери упражнение, чтобы увидеть свой прогресс 💪",
         reply_markup=ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
     )
+
 
     await state.set_state(ShowProgressStates.waiting_for_exercise)
 
