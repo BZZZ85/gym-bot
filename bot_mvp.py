@@ -302,56 +302,42 @@ async def get_user_records(user_id):
             user_id
         )
         return rows
-async def suggest_next_progress(user_id: int, exercise: str):
+AVAILABLE_WEIGHTS = [20, 15, 10, 5, 2.5, 1.25]
+
+def round_to_available_weight(weight: float) -> float:
     """
-    Анализирует последние тренировки по упражнению и предлагает оптимальный вес/повторы.
+    Округляем вес до ближайшего доступного блина.
     """
+    # Находим ближайший доступный вес
+    closest = min(AVAILABLE_WEIGHTS, key=lambda x: abs(x - weight))
+    return round(closest, 2)
+
+async def suggest_next_progress_real_weight(user_id: int, exercise: str) -> str:
+    # Получаем последние подходы пользователя
     async with db_pool.acquire() as conn:
-        records = await conn.fetch("""
-            SELECT weight, reps, date
-            FROM records
-            WHERE user_id=$1 AND exercise=$2
-            ORDER BY date DESC LIMIT 3
+        rows = await conn.fetch("""
+            SELECT weight::float FROM exercises
+            WHERE user_id = $1 AND exercise = $2
+            ORDER BY created_at DESC
+            LIMIT 4
         """, user_id, exercise)
 
-    if not records:
-        return "Ты ещё не выполнял это упражнение 💪\nНачни с комфортного веса, чтобы привыкнуть к технике."
+    if not rows:
+        return "Нет данных по этому упражнению, чтобы рассчитать прогресс."
 
-    # Разбор последних тренировок
-    try:
-        last_weights = []
-        last_reps = []
-        for rec in records:
-            weights = [float(w) for w in rec["weight"].split()]
-            reps = [int(r) for r in rec["reps"].split()]
-            last_weights.append(sum(weights) / len(weights))
-            last_reps.append(sum(reps) / len(reps))
-    except Exception:
-        return "Не удалось прочитать последние данные по весам 😅"
+    last_weights = [row['weight'] for row in rows]
 
-    avg_weight = round(sum(last_weights) / len(last_weights), 1)
-    avg_reps = round(sum(last_reps) / len(last_reps))
+    # Средний вес последнего тренинга
+    avg_weight = sum(last_weights) / len(last_weights)
 
-    # Правила прогрессии
-    if avg_reps >= 10:
-        new_weight = round(avg_weight * 1.025, 1)  # +2.5%
-        msg = (
-            f"📈 Отлично! Ты стабильно делаешь по {avg_reps} повторений.\n"
-            f"Попробуй увеличить вес до <b>{new_weight} кг</b> 💪"
-        )
-    elif avg_reps <= 6:
-        new_weight = round(avg_weight * 0.93, 1)  # -7%
-        msg = (
-            f"📉 Похоже, вес немного тяжёлый ({avg_reps} повторов в среднем).\n"
-            f"Попробуй снизить вес до <b>{new_weight} кг</b>, чтобы проработать технику ⚖️"
-        )
-    else:
-        msg = (
-            f"📊 Сейчас ты делаешь {avg_weight} кг × {avg_reps} повторений.\n"
-            f"Продолжай в том же духе! Когда дойдёшь до 10 повторов — добавим вес 💪"
-        )
+    # Добавляем небольшой прогресс (например, 2,5% или 5%)
+    suggested_weight = avg_weight * 1.025  # +2.5%
 
-    return msg
+    # Округляем до доступного веса
+    suggested_weight = round_to_available_weight(suggested_weight)
+
+    return (f"Последние подходы: {', '.join(str(w) for w in last_weights)} кг\n"
+            f"Рекомендуемый вес для следующей тренировки: {suggested_weight} кг")
 
 
 # ===== Обработчики =====
