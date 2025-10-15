@@ -302,46 +302,62 @@ async def get_user_records(user_id):
             user_id
         )
         return rows
-AVAILABLE_WEIGHTS = [20, 15, 10, 5, 2.5, 1.25]
+BLIN_WEIGHTS = [1, 1.25, 2.5, 5, 10, 15, 20]  # доступные блины
 
-AVAILABLE_WEIGHTS = [20, 15, 10, 5, 2.5, 1.25]
+def round_weight_up(weight: float) -> float:
+    """
+    Округляет вес до ближайшего доступного сверху.
+    """
+    for b in sorted(BLIN_WEIGHTS):
+        if weight <= b:
+            return b
+    return max(BLIN_WEIGHTS)
 
-def round_to_available_weight(weight: float) -> float:
-    """
-    Округляем вес до ближайшего доступного блина.
-    """
-    closest = min(AVAILABLE_WEIGHTS, key=lambda x: abs(x - weight))
-    return round(closest, 2)
 
-async def suggest_next_progress_by_sets(user_id: int, exercise: str) -> str:
+async def suggest_next_progress_by_sets(user_id: int, exercise: str):
     """
-    Возвращает рекомендации по весам на каждый подход на следующей тренировке.
+    Анализирует последние тренировки по упражнению и предлагает оптимальные веса по подходам.
     """
     async with db_pool.acquire() as conn:
-        rows = await conn.fetch("""
-            SELECT weight::float FROM exercises
-            WHERE user_id = $1 AND exercise = $2
+        records = await conn.fetch("""
+            SELECT weight, reps, created_at
+            FROM exercises
+            WHERE user_id=$1 AND exercise=$2
             ORDER BY created_at DESC
-            LIMIT 4
+            LIMIT 2
         """, user_id, exercise)
 
-    if not rows:
-        return "Нет данных по этому упражнению, чтобы рассчитать прогресс."
+    if not records:
+        return "Ты ещё не выполнял это упражнение 💪\nНачни с комфортного веса для техники."
 
-    last_weights = [row['weight'] for row in rows]
+    last_record = records[0]
+    weights = [float(w) for w in last_record["weight"].split()]
+    reps = [int(r) for r in last_record["reps"].split()]
 
-    # Предлагаем небольшой прогресс +2.5% на каждый подход
-    suggested_weights = []
-    for w in last_weights:
-        next_w = round_to_available_weight(w * 1.025)  # +2.5%
-        suggested_weights.append(next_w)
+    new_weights = []
+    for w, r in zip(weights, reps):
+        if r >= 10:
+            w_new = w * 1.025  # +2.5%
+        elif r <= 6:
+            w_new = w * 0.93  # -7%
+        else:
+            w_new = w  # оставить тот же вес
+        new_weights.append(round_weight(w_new))
 
-    # Формируем текст
-    result = "Рекомендации на следующую тренировку:\n"
-    for i, w in enumerate(suggested_weights, start=1):
-        result += f"{i} подход – {w} кг\n"
+    # Создаём сообщение
+    msg_lines = [f"🏋️ Прогресс: {exercise.upper()}\n"]
+    for rec in reversed(records):
+        msg_lines.append(
+            f"{rec['created_at'].strftime('%d-%m-%Y')} — подходы: {len(rec['weight'].split())} | "
+            f"повторений: {'-'.join(rec['reps'].split())} | "
+            f"вес(кг): {'-'.join(rec['weight'].split())}"
+        )
 
-    return result
+    msg_lines.append("\n💡 Предлагаемый вес для следующей тренировки:")
+    for i, w in enumerate(new_weights, start=1):
+        msg_lines.append(f"Подход {i}: {w} кг")
+
+    return "\n".join(msg_lines)
 
 
 
