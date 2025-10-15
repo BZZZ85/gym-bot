@@ -806,13 +806,9 @@ async def show_progress_graph_for_exercise(message: types.Message, exercise: str
         date_str = r['date'].strftime('%d-%m-%Y')
         dates.append(date_str)
 
-        # Парсим повторения
         reps = [int(x) for x in r['reps'].split()] if r['reps'] else []
-
-        # Парсим веса
         weights = [float(w) for w in re.split(r'[\s-]+', r['weight'])] if r.get('weight') else []
 
-        # Если меньше весов чем повторов, дублируем последний
         while len(weights) < len(reps):
             weights.append(weights[-1] if weights else 0)
 
@@ -823,13 +819,12 @@ async def show_progress_graph_for_exercise(message: types.Message, exercise: str
         weights_str = "-".join(map(str, weights)) if weights else "0"
         report_text += f"{date_str} — подходы: {r['sets']} | повторений: {reps_str} | вес(кг): {weights_str}\n"
 
-    # ====== Рекомендации по каждому подходу ======
+    # ====== Рекомендации ======
     recommendation = ""
     if recs:
         last_rec = recs[0]
         reps = [int(x) for x in last_rec['reps'].split()] if last_rec['reps'] else [10]*last_rec['sets']
         weights = [float(x) for x in re.split(r'[\s-]+', last_rec['weight'])] if last_rec.get('weight') else [20.0]*last_rec['sets']
-
         while len(weights) < len(reps):
             weights.append(weights[-1])
 
@@ -841,7 +836,6 @@ async def show_progress_graph_for_exercise(message: types.Message, exercise: str
                 w_new = w * 0.93
             else:
                 w_new = w
-            # округление до 0.5 кг
             w_new = round(w_new * 2) / 2
             new_weights.append(w_new)
 
