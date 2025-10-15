@@ -331,28 +331,30 @@ async def suggest_next_progress(user_id: int, exercise: str):
 
     last_record = records[0]
 
-    # Количество подходов
     sets = last_record["sets"] or 3
 
-    # Повторения
+    # Парсим повторения
     try:
         reps = [int(r) for r in last_record["reps"].split()]
     except Exception:
-        reps = [10] * sets  # если нет данных, ставим 10
+        reps = [10] * sets
 
-    # Вес
-    try:
-        weights = [float(w) for w in last_record["weight"].split()]
-    except Exception:
-        weights = [10.0] * sets  # дефолтный вес, если None
+    # Парсим веса
+    if last_record.get("weight"):
+        try:
+            weights = [float(w) for w in re.split(r'[\s-]+', last_record["weight"])]
+        except Exception:
+            weights = [10.0] * sets
+    else:
+        weights = [10.0] * sets
 
-    # Дублируем последний вес/повторения, если меньше подходов
-    while len(weights) < sets:
-        weights.append(weights[-1])
-    while len(reps) < sets:
-        reps.append(reps[-1])
+    # Удостоверимся, что длина списка совпадает с количеством подходов
+    if len(weights) < sets:
+        weights += [weights[-1]] * (sets - len(weights))
+    if len(reps) < sets:
+        reps += [reps[-1]] * (sets - len(reps))
 
-    # Рассчёт рекомендованного веса с округлением до доступных блинов
+    # Рассчёт рекомендованного веса
     new_weights = []
     for w, r in zip(weights, reps):
         if r >= 10:
@@ -361,25 +363,26 @@ async def suggest_next_progress(user_id: int, exercise: str):
             w_new = w * 0.93   # -7%
         else:
             w_new = w
-        # округляем до ближайшего доступного блина
-        new_weights.append(round_weight_up(w_new))
+        # округляем до ближайшего блина
+        w_new = round_weight_up(w_new)
+        new_weights.append(w_new)
 
     # Формируем отчёт
     report_lines = [f"🏋️ Прогресс: {exercise.upper()}\n"]
     for r in reversed(records):
         date_str = r["date"].strftime("%d-%m-%Y")
         r_list = r["reps"].split() if r["reps"] else ["0"] * r["sets"]
-        w_list = r["weight"].split() if r["weight"] else ["0"] * r["sets"]
+        w_list = r["weight"].split() if r.get("weight") else ["0"] * r["sets"]
         report_lines.append(
             f"{date_str} — подходы: {r['sets']} | повторений: {'-'.join(r_list)} | вес(кг): {'-'.join(w_list)}"
         )
 
-    # Рекомендации по следующей тренировке
     report_lines.append("\n💡 Рекомендуемый вес для следующей тренировки по подходам:")
     for i, w in enumerate(new_weights, start=1):
         report_lines.append(f"Подход {i}: {w} кг")
 
     return "\n".join(report_lines)
+
 
 
 
