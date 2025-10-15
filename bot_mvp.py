@@ -302,50 +302,55 @@ async def get_user_records(user_id):
             user_id
         )
         return rows
+# Доступные блины
 AVAILABLE_WEIGHTS = [20, 15, 10, 5, 2.5, 1.25]
 
-
-def round_to_available_weight(weight: float) -> float:
+def round_up_to_available_weight(weight: float) -> float:
     """
-    Округляем вес до ближайшего доступного блина.
+    Округляем вес вверх до ближайшего доступного блина.
     """
-    # Находим ближайший доступный вес
-    closest = min(AVAILABLE_WEIGHTS, key=lambda x: abs(x - weight))
-    return round(closest, 2)
+    sorted_weights = sorted(AVAILABLE_WEIGHTS)
+    for w in sorted_weights:
+        if w >= weight:
+            return w
+    return max(AVAILABLE_WEIGHTS)
 
-
-async def suggest_next_progress_by_sets(user_id: int, exercise: str) -> str:
+async def suggest_next_progress(user_id: int, exercise: str) -> str:
     """
     Возвращает рекомендации по весам на каждый подход на следующей тренировке.
     """
     async with db_pool.acquire() as conn:
-        rows = await conn.fetch("""
-            SELECT weight::float FROM exercises
-@@ -327,673 +330,675 @@""")
+        # Берем последнюю запись по упражнению
+        row = await conn.fetchrow("""
+            SELECT weight FROM exercises
+            WHERE user_id = $1 AND exercise = $2
+            ORDER BY id DESC
+            LIMIT 1
+        """, user_id, exercise)
 
-    last_weights = [row['weight'] for row in rows]
+    if not row or not row['weight']:
+        return "Нет данных для анализа прогресса."
 
-    # Средний вес последнего тренинга
-    avg_weight = sum(last_weights) / len(last_weights)
-    # Предлагаем небольшой прогресс +2.5% на каждый подход
+    # Преобразуем веса в список float
+    try:
+        last_weights = [float(x) for x in row['weight'].split()]
+    except ValueError:
+        return "Ошибка чтения данных по весам."
+
+    # Рассчитываем прогресс по каждому подходу (+5% и округление вверх)
     suggested_weights = []
     for w in last_weights:
-        next_w = round_to_available_weight(w * 1.025)  # +2.5%
+        next_w = w * 1.05
+        next_w = round_up_to_available_weight(next_w)
         suggested_weights.append(next_w)
 
-    # Добавляем небольшой прогресс (например, 2,5% или 5%)
-    suggested_weight = avg_weight * 1.025  # +2.5%
-    # Формируем текст
-    result = "Рекомендации на следующую тренировку:\n"
+    # Формируем текст рекомендации
+    result = "💡 Рекомендуемый вес для следующей тренировки по подходам:\n"
     for i, w in enumerate(suggested_weights, start=1):
-        result += f"{i} подход – {w} кг\n"
+        result += f"Подход {i}: {w} кг\n"
 
-    # Округляем до доступного веса
-    suggested_weight = round_to_available_weight(suggested_weight)
     return result
 
-    return (f"Последние подходы: {', '.join(str(w) for w in last_weights)} кг\n"
-            f"Рекомендуемый вес для следующей тренировки: {suggested_weight} кг")
 
 
 # ===== Обработчики =====
