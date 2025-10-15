@@ -312,7 +312,7 @@ def round_weight_up(weight: float) -> float:
             return b
     return max(BLIN_WEIGHTS)
 
-async def suggest_next_progress_by_sets(user_id: int, exercise: str):
+async def  suggest_next_progress(user_id: int, exercise: str):
     """
     Анализ последних тренировок и предложение веса для каждого подхода.
     """
