@@ -871,6 +871,7 @@ async def show_progress_graph_for_exercise(message: types.Message, exercise: str
 
 
 
+
     # ====== График ======
     import matplotlib.pyplot as plt
     from aiogram.types import FSInputFile
