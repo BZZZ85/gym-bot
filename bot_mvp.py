@@ -344,15 +344,15 @@ async def suggest_next_progress(user_id: int, exercise: str):
     try:
         weights = [float(w) for w in last_record["weight"].split()]
     except Exception:
-        weights = [20.0] * sets  # дефолтный вес, если None
+        weights = [10.0] * sets  # дефолтный вес, если None
 
-    # Если подходов больше, чем весов/повторений, дублируем последний
+    # Дублируем последний вес/повторения, если меньше подходов
     while len(weights) < sets:
         weights.append(weights[-1])
     while len(reps) < sets:
         reps.append(reps[-1])
 
-    # Рассчёт рекомендованного веса
+    # Рассчёт рекомендованного веса с округлением до доступных блинов
     new_weights = []
     for w, r in zip(weights, reps):
         if r >= 10:
@@ -361,7 +361,8 @@ async def suggest_next_progress(user_id: int, exercise: str):
             w_new = w * 0.93   # -7%
         else:
             w_new = w
-        new_weights.append(round(w_new, 1))
+        # округляем до ближайшего доступного блина
+        new_weights.append(round_weight_up(w_new))
 
     # Формируем отчёт
     report_lines = [f"🏋️ Прогресс: {exercise.upper()}\n"]
@@ -373,11 +374,13 @@ async def suggest_next_progress(user_id: int, exercise: str):
             f"{date_str} — подходы: {r['sets']} | повторений: {'-'.join(r_list)} | вес(кг): {'-'.join(w_list)}"
         )
 
+    # Рекомендации по следующей тренировке
     report_lines.append("\n💡 Рекомендуемый вес для следующей тренировки по подходам:")
     for i, w in enumerate(new_weights, start=1):
         report_lines.append(f"Подход {i}: {w} кг")
 
     return "\n".join(report_lines)
+
 
 
 
