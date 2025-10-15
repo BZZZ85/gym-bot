@@ -303,7 +303,7 @@ async def get_user_records(user_id):
             user_id
         )
         return rows
-BLIN_WEIGHTS = [1.25, 2.5, 5, 10, 15, 20]  # доступные блины
+BLIN_WEIGHTS = [2.5, 5, 10, 15, 20]  # доступные блины
 
 def round_weight_up(weight: float) -> float:
     """Округляем вес вверх до ближайшего доступного блина"""
