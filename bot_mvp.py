@@ -786,49 +786,39 @@ async def show_selected_progress(message: types.Message, state: FSMContext):
         await state.clear()
         return
 
-    # ====== График и текстовый отчет ======
+    # ===== Подготовка данных =====
     dates, avg_weights = [], []
     report_text = f"🏋️ Прогресс: {text}\n\n"
+    last_weights_per_set = []
 
     for r in selected_records:
         date_str = r['date'].strftime('%d-%m-%Y')
         dates.append(date_str)
 
         reps = [int(x) for x in r['reps'].split()] if r['reps'] else []
-        weights = []
-        if r.get('weight'):
-            try:
-                weights = [float(x) for x in r['weight'].split()]
-            except ValueError:
-                weights = []
+        weights = [float(x) for x in r['weight'].split()] if r.get('weight') else [0]*r['sets']
 
         while len(weights) < len(reps):
             weights.append(weights[-1] if weights else 0)
 
-        avg_weight = round(sum(weights) / len(weights), 1) if weights else 0
+        avg_weight = round(sum(weights)/len(weights), 1) if weights else 0
         avg_weights.append(avg_weight)
+        last_weights_per_set.append(weights)
 
         reps_str = "-".join(map(str, reps)) if reps else "0"
         weights_str = "-".join(map(str, weights)) if weights else "0"
         report_text += f"{date_str} — подходы: {r['sets']} | повторений: {reps_str} | вес(кг): {weights_str}\n"
 
-    # ====== Рекомендации по подходам ======
+    # ===== Рекомендации по каждому подходу =====
     recommendation = ""
-    last_record = selected_records[-1]
-    if last_record.get('weight'):
-        try:
-            last_weights = [float(w) for w in last_record['weight'].split()]
-        except ValueError:
-            last_weights = []
+    if last_weights_per_set:
+        last_weights = last_weights_per_set[-1]
+        suggested_weights = [round(w * 1.05 + 0.49)//1 for w in last_weights]  # +5% и округление вверх
+        recommendation = "💡 Рекомендуемый вес для следующей тренировки по подходам:\n"
+        for i, w in enumerate(suggested_weights, 1):
+            recommendation += f"Подход {i}: {w} кг\n"
 
-        if last_weights:
-            # Увеличиваем на 5% и округляем вверх
-            suggested_weights = [round_up_weight(w * 1.05) for w in last_weights]
-            recommendation = "💡 Рекомендуемый вес для следующей тренировки по подходам:\n"
-            for i, w in enumerate(suggested_weights, start=1):
-                recommendation += f"Подход {i}: {w} кг\n"
-
-    # ====== График ======
+    # ===== Построение графика =====
     fig, ax = plt.subplots(figsize=(8, 4), constrained_layout=True)
     ax.plot(dates, avg_weights, color="orange", marker="o", label="Средний вес (кг)")
     ax.set_xlabel("Дата")
@@ -838,14 +828,15 @@ async def show_selected_progress(message: types.Message, state: FSMContext):
     ax.set_title(f"Прогресс: {text}")
     ax.legend(loc="upper left")
 
-    filename = f"progress_{message.from_user.id}_{text}.png"
+    filename = f"progress_{user_id}_{text}.png"
     plt.savefig(filename, format='png', dpi=120)
     plt.close(fig)
 
+    # ===== Отправка пользователю =====
     try:
         await message.answer_photo(
             FSInputFile(filename),
-            caption=report_text + "\n" + recommendation,
+            caption=report_text + recommendation,
             reply_markup=main_kb()
         )
     except Exception as e:
@@ -853,6 +844,9 @@ async def show_selected_progress(message: types.Message, state: FSMContext):
 
     if os.path.exists(filename):
         os.remove(filename)
+
+    await state.clear()
+
 
 @dp.message(lambda m: m.text == "⏰ Напоминания")
 async def reminders_menu(message: types.Message):
