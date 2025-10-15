@@ -313,13 +313,17 @@ def round_weight_up(weight: float) -> float:
     return max(BLIN_WEIGHTS)
 
 async def suggest_next_progress(user_id: int, exercise: str):
+    """
+    Анализ последних записей упражнения и предложение веса для следующей тренировки.
+    Берёт данные из records, обрабатывает None веса.
+    """
     async with db_pool.acquire() as conn:
         records = await conn.fetch("""
             SELECT sets, reps, weight, date
             FROM records
             WHERE user_id = $1 AND exercise = $2
             ORDER BY date DESC
-            LIMIT 1
+            LIMIT 2
         """, user_id, exercise)
 
     if not records:
@@ -327,46 +331,53 @@ async def suggest_next_progress(user_id: int, exercise: str):
 
     last_record = records[0]
 
-    sets = last_record['sets'] or 3
+    # Количество подходов
+    sets = last_record["sets"] or 3
 
-    # корректно парсим повторения и веса
-    reps_list = [int(r) for r in last_record['reps'].split()] if last_record['reps'] else [10]*sets
-    weights_list = [float(w) for w in re.split(r'[\s-]+', last_record['weight'])] if last_record['weight'] else [20.0]*sets
+    # Повторения
+    try:
+        reps = [int(r) for r in last_record["reps"].split()]
+    except Exception:
+        reps = [10] * sets  # если нет данных, ставим 10
 
-    # синхронизируем длину списков
-    while len(reps_list) < sets:
-        reps_list.append(reps_list[-1])
-    while len(weights_list) < sets:
-        weights_list.append(weights_list[-1])
+    # Вес
+    try:
+        weights = [float(w) for w in last_record["weight"].split()]
+    except Exception:
+        weights = [20.0] * sets  # дефолтный вес, если None
 
-    # вычисляем новые веса
+    # Если подходов больше, чем весов/повторений, дублируем последний
+    while len(weights) < sets:
+        weights.append(weights[-1])
+    while len(reps) < sets:
+        reps.append(reps[-1])
+
+    # Рассчёт рекомендованного веса
     new_weights = []
-    for w, r in zip(weights_list, reps_list):
+    for w, r in zip(weights, reps):
         if r >= 10:
-            w_new = w * 1.025
+            w_new = w * 1.025  # +2.5%
         elif r <= 6:
-            w_new = w * 0.93
+            w_new = w * 0.93   # -7%
         else:
             w_new = w
-        # округляем до 0.5 кг
-        w_new = round(w_new * 2) / 2
-        new_weights.append(w_new)
+        new_weights.append(round(w_new, 1))
 
-    # формируем отчёт
-    report = f"🏋️ Прогресс: {exercise.upper()}\n"
-    date_str = last_record['date'].strftime("%d-%m-%Y")
-    reps_str = '-'.join(map(str, reps_list))
-    weights_str = '-'.join(map(str, weights_list))
-    report += f"{date_str} — подходы: {sets} | повторений: {reps_str} | вес(кг): {weights_str}\n"
+    # Формируем отчёт
+    report_lines = [f"🏋️ Прогресс: {exercise.upper()}\n"]
+    for r in reversed(records):
+        date_str = r["date"].strftime("%d-%m-%Y")
+        r_list = r["reps"].split() if r["reps"] else ["0"] * r["sets"]
+        w_list = r["weight"].split() if r["weight"] else ["0"] * r["sets"]
+        report_lines.append(
+            f"{date_str} — подходы: {r['sets']} | повторений: {'-'.join(r_list)} | вес(кг): {'-'.join(w_list)}"
+        )
 
-    report += "\n💡 Рекомендуемый вес для следующей тренировки по подходам:\n"
-    for i, w in enumerate(new_weights, 1):
-        report += f"Подход {i}: {w} кг\n"
+    report_lines.append("\n💡 Рекомендуемый вес для следующей тренировки по подходам:")
+    for i, w in enumerate(new_weights, start=1):
+        report_lines.append(f"Подход {i}: {w} кг")
 
-    return report
-
-
-
+    return "\n".join(report_lines)
 
 
 
@@ -552,23 +563,20 @@ async def process_exercise(message: types.Message, state: FSMContext):
         return
 
     exercises = [ex.lower() for ex in await get_exercises(user_id) if ex]
-
     if text == "➕ Добавить новое упражнение":
         await message.answer("Введите название нового упражнения:")
         await state.set_state(AddApproachStates.waiting_for_new_exercise)
         return
-
-    if text.lower() not in exercises:
+    elif text.lower() not in exercises:
         await message.answer("❗ Выберите упражнение из списка или добавьте новое.")
         return
 
-    # Просто сохраняем выбранное упражнение
+    # Показываем умную подсказку
+    suggestion = await suggest_next_progress(user_id, text)
+    await message.answer(suggestion, parse_mode="HTML")
+
     await state.update_data(exercise=text)
-
-    # НЕ показываем прогресс — сразу спрашиваем количество подходов
     await ask_for_sets(message, state)
-
-
 
 
 
@@ -806,9 +814,15 @@ async def show_progress_graph_for_exercise(message: types.Message, exercise: str
         date_str = r['date'].strftime('%d-%m-%Y')
         dates.append(date_str)
 
+        # Парсим повторения
         reps = [int(x) for x in r['reps'].split()] if r['reps'] else []
-        weights = [float(w) for w in re.split(r'[\s-]+', r['weight'])] if r.get('weight') else []
 
+        # Парсим веса корректно (через пробел или дефис)
+        weights = []
+        if r.get('weight'):
+            weights = [float(w) for w in re.split(r'[\s-]+', r['weight'])]
+
+        # Если меньше весов чем повторов, дублируем последний
         while len(weights) < len(reps):
             weights.append(weights[-1] if weights else 0)
 
@@ -819,58 +833,25 @@ async def show_progress_graph_for_exercise(message: types.Message, exercise: str
         weights_str = "-".join(map(str, weights)) if weights else "0"
         report_text += f"{date_str} — подходы: {r['sets']} | повторений: {reps_str} | вес(кг): {weights_str}\n"
 
-    # ===== Рекомендации =====
+    # ====== Рекомендации по каждому подходу ======
     recommendation = ""
     if recs:
-        last_rec = recs[0]
-        reps = [int(x) for x in last_rec['reps'].split()] if last_rec['reps'] else [10]*last_rec['sets']
-        weights = [float(x) for x in re.split(r'[\s-]+', last_rec['weight'])] if last_rec.get('weight') else [20.0]*last_rec['sets']
-        while len(weights) < len(reps):
-            weights.append(weights[-1])
-
+        last_weights = weights  # берем веса последней записи
         new_weights = []
-        for w, r in zip(weights, reps):
+        for i, w in enumerate(last_weights):
+            r = int(reps[i]) if i < len(reps) else 0
             if r >= 10:
-                w_new = w * 1.025
+                w_new = w * 1.025  # +2.5%
             elif r <= 6:
-                w_new = w * 0.93
+                w_new = w * 0.93   # -7%
             else:
                 w_new = w
-            w_new = round(w_new * 2) / 2
-            new_weights.append(w_new)
+            # округляем до ближайшего стандартного блина
+            new_weights.append(round(w_new / 1.25) * 1.25)
 
         recommendation = "\n💡 Рекомендуемый вес для следующей тренировки по подходам:\n"
         for idx, w in enumerate(new_weights, start=1):
             recommendation += f"Подход {idx}: {w} кг\n"
-
-    # ===== График =====
-    fig, ax = plt.subplots(figsize=(8, 4), constrained_layout=True)
-    ax.plot(dates, avg_weights, color="orange", marker="o", label="Средний вес (кг)")
-    ax.set_xlabel("Дата")
-    ax.set_ylabel("Вес (кг)", color="orange")
-    ax.tick_params(axis='y', labelcolor="orange")
-    plt.xticks(rotation=45, ha='right')
-    ax.set_title(f"Прогресс: {exercise}")
-    ax.legend(loc="upper left")
-
-    filename = f"progress_{message.from_user.id}_{exercise}.png"
-    plt.savefig(filename, format='png', dpi=120)
-    plt.close(fig)
-
-    try:
-        await message.answer_photo(
-            FSInputFile(filename),
-            caption=report_text + recommendation,
-            reply_markup=main_kb()
-        )
-    except Exception as e:
-        await message.answer(f"Не удалось отправить график: {e}")
-
-    if os.path.exists(filename):
-        os.remove(filename)
-
-
-
 
     # ====== График ======
     import matplotlib.pyplot as plt
