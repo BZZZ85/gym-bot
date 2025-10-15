@@ -713,22 +713,25 @@ class ProgressStates(StatesGroup):
     waiting_for_exercise = State()
 
 # ===== Обработчик кнопки 📈 Прогресс =====
+# ===== Обработчик кнопки 📈 Прогресс =====
 @dp.message(lambda m: m.text == "📈 Прогресс")
-async def progress(message: types.Message, state: FSMContext):
+async def show_progress_menu(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     exercises = await get_exercises(user_id)
 
     if not exercises:
-        await message.answer("У вас пока нет упражнений.", reply_markup=main_kb())
+        await message.answer("🏋️ У вас пока нет упражнений. Добавьте новое!", reply_markup=main_kb())
         return
 
-    # Формируем клавиатуру с упражнениями
-    kb_buttons = [[KeyboardButton(text=ex)] for ex in exercises if ex]
-    kb_buttons.append([KeyboardButton(text="↩ В меню")])
-    kb = ReplyKeyboardMarkup(keyboard=kb_buttons, resize_keyboard=True, one_time_keyboard=True)
+    kb = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=ex)] for ex in exercises] + [[KeyboardButton(text="↩ В меню")]],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
 
-    await message.answer("Выберите упражнение для отображения прогресса:", reply_markup=kb)
+    await message.answer("Выберите упражнение, чтобы посмотреть прогресс:", reply_markup=kb)
     await state.set_state(ShowProgressStates.waiting_for_exercise)
+
 
 
 # ===== FSM для выбора упражнения =====
@@ -771,10 +774,7 @@ async def show_progress_graph_for_exercise(message: types.Message, exercise: str
         date_str = r['date'].strftime('%d-%m-%Y')
         dates.append(date_str)
 
-        # Парсим повторения
         reps = [int(x) for x in r['reps'].split()] if r['reps'] else []
-
-        # Парсим веса
         weights = []
         if r.get('weight'):
             try:
@@ -782,20 +782,34 @@ async def show_progress_graph_for_exercise(message: types.Message, exercise: str
             except ValueError:
                 weights = []
 
-        # Дублируем последний вес, если их меньше повторений
         while len(weights) < len(reps):
             weights.append(weights[-1] if weights else 0)
 
-        # Средний вес
         avg_weight = round(sum(weights) / len(weights), 1) if weights else 0
         avg_weights.append(avg_weight)
 
-        # Формируем текстовый отчёт
         reps_str = "-".join(map(str, reps)) if reps else "0"
         weights_str = "-".join(map(str, weights)) if weights else "0"
         report_text += f"{date_str} — подходы: {r['sets']} | повторений: {reps_str} | вес(кг): {weights_str}\n"
 
-    # Строим график
+    # ====== Рекомендация ======
+    recommendation = ""
+    if len(avg_weights) >= 2:
+        last = avg_weights[-1]
+        prev = avg_weights[-2]
+        if last > prev:
+            next_weight = round(last + 2.5, 1)
+            recommendation = f"\n🔥 Отличная динамика! В прошлый раз {last} кг. Попробуй {next_weight} кг 💪"
+        elif last == prev:
+            next_weight = round(last + 1.25, 1)
+            recommendation = f"\n💡 Ты стабилен на {last} кг. Можно добавить немного — попробуй {next_weight} кг."
+        else:
+            recommendation = f"\n⚠️ Вес немного снизился ({last} кг). Возможно, стоит отдохнуть или сделать разгрузку."
+    elif avg_weights:
+        next_weight = round(avg_weights[-1] + 2.5, 1)
+        recommendation = f"\n💪 Начало положено! В следующий раз попробуй {next_weight} кг."
+
+    # ====== График ======
     fig, ax = plt.subplots(figsize=(8, 4), constrained_layout=True)
     ax.plot(dates, avg_weights, color="orange", marker="o", label="Средний вес (кг)")
     ax.set_xlabel("Дата")
@@ -810,12 +824,17 @@ async def show_progress_graph_for_exercise(message: types.Message, exercise: str
     plt.close(fig)
 
     try:
-        await message.answer_photo(FSInputFile(filename), caption=report_text, reply_markup=main_kb())
+        await message.answer_photo(
+            FSInputFile(filename),
+            caption=report_text + recommendation,
+            reply_markup=main_kb()
+        )
     except Exception as e:
-        await message.answer(f"Не удалось отправить график для {exercise}: {e}")
+        await message.answer(f"Не удалось отправить график: {e}")
 
     if os.path.exists(filename):
         os.remove(filename)
+
 
 @dp.message(lambda m: m.text == "⏰ Напоминания")
 async def reminders_menu(message: types.Message):
