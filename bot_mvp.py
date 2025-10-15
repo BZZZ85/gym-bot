@@ -302,12 +302,10 @@ async def get_user_records(user_id):
             user_id
         )
         return rows
-BLIN_WEIGHTS = [1, 1.25, 2.5, 5, 10, 15, 20]  # доступные блины
+BLIN_WEIGHTS = [1.25, 2.5, 5, 10, 15, 20]  # доступные блины
 
 def round_weight_up(weight: float) -> float:
-    """
-    Округляет вес до ближайшего доступного сверху.
-    """
+    """Округляем вес вверх до ближайшего доступного блина"""
     for b in sorted(BLIN_WEIGHTS):
         if weight <= b:
             return b
@@ -315,7 +313,7 @@ def round_weight_up(weight: float) -> float:
 
 async def suggest_next_progress_by_sets(user_id: int, exercise: str):
     """
-    Анализ последних тренировок по упражнению и предлагает оптимальные веса для каждого подхода.
+    Анализ последних тренировок и предложение веса для каждого подхода.
     """
     async with db_pool.acquire() as conn:
         records = await conn.fetch("""
@@ -327,7 +325,7 @@ async def suggest_next_progress_by_sets(user_id: int, exercise: str):
         """, user_id, exercise)
 
     if not records:
-        return "Ты ещё не выполнял это упражнение 💪\nНачни с комфортного веса для техники."
+        return "Ты ещё не выполнял это упражнение 💪 Начни с комфортного веса для техники."
 
     last_record = records[0]
     weights = [float(w) for w in last_record["weight"].split()]
@@ -340,10 +338,10 @@ async def suggest_next_progress_by_sets(user_id: int, exercise: str):
         elif r <= 6:
             w_new = w * 0.93   # -7%
         else:
-            w_new = w          # оставить тот же вес
-        new_weights.append(round_weight_up(w_new))
+            w_new = w
+        new_weights.append(round_weight_up(round(w_new, 2)))
 
-    # Создаём сообщение
+    # Формируем текст отчёта
     msg_lines = [f"🏋️ Прогресс: {exercise.upper()}\n"]
     for rec in reversed(records):
         msg_lines.append(
@@ -352,11 +350,12 @@ async def suggest_next_progress_by_sets(user_id: int, exercise: str):
             f"вес(кг): {'-'.join(rec['weight'].split())}"
         )
 
-    msg_lines.append("\n💡 Предлагаемый вес для следующей тренировки:")
+    msg_lines.append("\n💡 Рекомендуемый вес для следующей тренировки:")
     for i, w in enumerate(new_weights, start=1):
         msg_lines.append(f"Подход {i}: {w} кг")
 
     return "\n".join(msg_lines)
+
 
 
 
