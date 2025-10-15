@@ -819,7 +819,7 @@ async def show_progress_graph_for_exercise(message: types.Message, exercise: str
         weights_str = "-".join(map(str, weights)) if weights else "0"
         report_text += f"{date_str} — подходы: {r['sets']} | повторений: {reps_str} | вес(кг): {weights_str}\n"
 
-    # ====== Рекомендации ======
+    # ===== Рекомендации =====
     recommendation = ""
     if recs:
         last_rec = recs[0]
@@ -843,7 +843,7 @@ async def show_progress_graph_for_exercise(message: types.Message, exercise: str
         for idx, w in enumerate(new_weights, start=1):
             recommendation += f"Подход {idx}: {w} кг\n"
 
-    # ====== График ======
+    # ===== График =====
     fig, ax = plt.subplots(figsize=(8, 4), constrained_layout=True)
     ax.plot(dates, avg_weights, color="orange", marker="o", label="Средний вес (кг)")
     ax.set_xlabel("Дата")
@@ -868,6 +868,7 @@ async def show_progress_graph_for_exercise(message: types.Message, exercise: str
 
     if os.path.exists(filename):
         os.remove(filename)
+
 
 
     # ====== График ======
