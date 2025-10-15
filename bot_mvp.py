@@ -783,6 +783,8 @@ async def show_progress_graph_for_exercise(message: types.Message, exercise: str
     dates, avg_weights = [], []
     report_text = f"🏋️ Прогресс: {exercise}\n\n"
 
+    last_weights, last_reps = [], []
+
     for r in recs:
         date_str = r['date'].strftime('%d-%m-%Y')
         dates.append(date_str)
@@ -805,22 +807,28 @@ async def show_progress_graph_for_exercise(message: types.Message, exercise: str
         weights_str = "-".join(map(str, weights)) if weights else "0"
         report_text += f"{date_str} — подходы: {r['sets']} | повторений: {reps_str} | вес(кг): {weights_str}\n"
 
-    # ====== Рекомендация ======
-    recommendation = ""
-    if len(avg_weights) >= 2:
-        last = avg_weights[-1]
-        prev = avg_weights[-2]
-        if last > prev:
-            next_weight = round(last + 2.5, 1)
-            recommendation = f"\n🔥 Отличная динамика! В прошлый раз {last} кг. Попробуй {next_weight} кг 💪"
-        elif last == prev:
-            next_weight = round(last + 1.25, 1)
-            recommendation = f"\n💡 Ты стабилен на {last} кг. Можно добавить немного — попробуй {next_weight} кг."
-        else:
-            recommendation = f"\n⚠️ Вес немного снизился ({last} кг). Возможно, стоит отдохнуть или сделать разгрузку."
-    elif avg_weights:
-        next_weight = round(avg_weights[-1] + 2.5, 1)
-        recommendation = f"\n💪 Начало положено! В следующий раз попробуй {next_weight} кг."
+        # Сохраняем последнюю тренировку для подсказки
+        if not last_weights:
+            last_weights = weights
+            last_reps = reps
+
+    # ====== Рекомендация по каждому подходу ======
+    suggested_weights = []
+    if last_weights and last_reps:
+        for w, r in zip(last_weights, last_reps):
+            if r >= 10:
+                w_new = w * 1.025  # +2.5%
+            elif r <= 6:
+                w_new = w * 0.93   # -7%
+            else:
+                w_new = w
+            suggested_weights.append(round_weight_up(round(w_new, 2)))
+
+        rec_text = "💡 Рекомендуемый вес для следующей тренировки по подходам:\n"
+        for i, w in enumerate(suggested_weights, start=1):
+            rec_text += f"Подход {i}: {w} кг\n"
+    else:
+        rec_text = "💪 Начало положено! Введите веса в следующей тренировке."
 
     # ====== График ======
     fig, ax = plt.subplots(figsize=(8, 4), constrained_layout=True)
@@ -839,7 +847,7 @@ async def show_progress_graph_for_exercise(message: types.Message, exercise: str
     try:
         await message.answer_photo(
             FSInputFile(filename),
-            caption=report_text + recommendation,
+            caption=report_text + "\n" + rec_text,
             reply_markup=main_kb()
         )
     except Exception as e:
@@ -847,6 +855,7 @@ async def show_progress_graph_for_exercise(message: types.Message, exercise: str
 
     if os.path.exists(filename):
         os.remove(filename)
+
 
 
 @dp.message(lambda m: m.text == "⏰ Напоминания")
