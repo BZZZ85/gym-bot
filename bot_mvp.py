@@ -305,51 +305,46 @@ async def get_user_records(user_id):
 # Доступные блины
 AVAILABLE_WEIGHTS = [20, 15, 10, 5, 2.5, 1.25]
 
-def round_up_to_available_weight(weight: float) -> float:
+def round_up_weight(weight: float) -> float:
     """
     Округляем вес вверх до ближайшего доступного блина.
     """
-    sorted_weights = sorted(AVAILABLE_WEIGHTS)
-    for w in sorted_weights:
-        if w >= weight:
-            return w
-    return max(AVAILABLE_WEIGHTS)
+    higher_options = [w for w in AVAILABLE_WEIGHTS if w >= weight]
+    return min(higher_options) if higher_options else max(AVAILABLE_WEIGHTS)
 
 async def suggest_next_progress(user_id: int, exercise: str) -> str:
     """
     Возвращает рекомендации по весам на каждый подход на следующей тренировке.
+    Увеличение на 5% и округление вверх.
     """
     async with db_pool.acquire() as conn:
-        # Берем последнюю запись по упражнению
+        # Берём последнюю запись по упражнению
         row = await conn.fetchrow("""
-            SELECT weight FROM exercises
-            WHERE user_id = $1 AND exercise = $2
-            ORDER BY id DESC
+            SELECT weight 
+            FROM records 
+            WHERE user_id=$1 AND exercise=$2
+            ORDER BY date DESC
             LIMIT 1
         """, user_id, exercise)
 
     if not row or not row['weight']:
-        return "Нет данных для анализа прогресса."
+        return "Нет данных для анализа прогресса. Добавьте подходы для упражнения."
 
-    # Преобразуем веса в список float
     try:
-        last_weights = [float(x) for x in row['weight'].split()]
+        last_weights = [float(w) for w in row['weight'].split()]
     except ValueError:
-        return "Ошибка чтения данных по весам."
+        return "Ошибка в данных о весах. Проверьте последние записи упражнения."
 
-    # Рассчитываем прогресс по каждому подходу (+5% и округление вверх)
-    suggested_weights = []
-    for w in last_weights:
-        next_w = w * 1.05
-        next_w = round_up_to_available_weight(next_w)
-        suggested_weights.append(next_w)
+    # Рассчитываем +5% и округляем вверх
+    suggested_weights = [round_up_weight(w * 1.05) for w in last_weights]
 
     # Формируем текст рекомендации
-    result = "💡 Рекомендуемый вес для следующей тренировки по подходам:\n"
+    result = f"💡 Рекомендуемый вес для следующей тренировки по подходам:\n"
     for i, w in enumerate(suggested_weights, start=1):
         result += f"Подход {i}: {w} кг\n"
 
     return result
+
 
 
 
@@ -770,12 +765,32 @@ async def show_selected_progress(message: types.Message, state: FSMContext):
     await state.clear()
 
 
-# ===== Новая функция для одного упражнения =====
-async def show_progress_graph_for_exercise(message: types.Message, exercise: str, recs: list):
-    dates, avg_weights = [], []
-    report_text = f"🏋️ Прогресс: {exercise}\n\n"
+@dp.message(ShowProgressStates.waiting_for_exercise)
+async def show_selected_progress(message: types.Message, state: FSMContext):
+    text = message.text.strip()
+    if text == "↩ В меню":
+        await start(message, state)
+        return
 
-    for r in recs:
+    user_id = message.from_user.id
+    records = await get_user_records(user_id)
+    if not records:
+        await message.answer("У вас пока нет записей.", reply_markup=main_kb())
+        await state.clear()
+        return
+
+    # Фильтруем записи по выбранному упражнению
+    selected_records = [r for r in records if r['exercise'] == text]
+    if not selected_records:
+        await message.answer("Нет записей по выбранному упражнению.", reply_markup=main_kb())
+        await state.clear()
+        return
+
+    # ====== График и текстовый отчет ======
+    dates, avg_weights = [], []
+    report_text = f"🏋️ Прогресс: {text}\n\n"
+
+    for r in selected_records:
         date_str = r['date'].strftime('%d-%m-%Y')
         dates.append(date_str)
 
@@ -797,22 +812,21 @@ async def show_progress_graph_for_exercise(message: types.Message, exercise: str
         weights_str = "-".join(map(str, weights)) if weights else "0"
         report_text += f"{date_str} — подходы: {r['sets']} | повторений: {reps_str} | вес(кг): {weights_str}\n"
 
-    # ====== Рекомендация ======
+    # ====== Рекомендации по подходам ======
     recommendation = ""
-    if len(avg_weights) >= 2:
-        last = avg_weights[-1]
-        prev = avg_weights[-2]
-        if last > prev:
-            next_weight = round(last + 2.5, 1)
-            recommendation = f"\n🔥 Отличная динамика! В прошлый раз {last} кг. Попробуй {next_weight} кг 💪"
-        elif last == prev:
-            next_weight = round(last + 1.25, 1)
-            recommendation = f"\n💡 Ты стабилен на {last} кг. Можно добавить немного — попробуй {next_weight} кг."
-        else:
-            recommendation = f"\n⚠️ Вес немного снизился ({last} кг). Возможно, стоит отдохнуть или сделать разгрузку."
-    elif avg_weights:
-        next_weight = round(avg_weights[-1] + 2.5, 1)
-        recommendation = f"\n💪 Начало положено! В следующий раз попробуй {next_weight} кг."
+    last_record = selected_records[-1]
+    if last_record.get('weight'):
+        try:
+            last_weights = [float(w) for w in last_record['weight'].split()]
+        except ValueError:
+            last_weights = []
+
+        if last_weights:
+            # Увеличиваем на 5% и округляем вверх
+            suggested_weights = [round_up_weight(w * 1.05) for w in last_weights]
+            recommendation = "💡 Рекомендуемый вес для следующей тренировки по подходам:\n"
+            for i, w in enumerate(suggested_weights, start=1):
+                recommendation += f"Подход {i}: {w} кг\n"
 
     # ====== График ======
     fig, ax = plt.subplots(figsize=(8, 4), constrained_layout=True)
@@ -821,17 +835,17 @@ async def show_progress_graph_for_exercise(message: types.Message, exercise: str
     ax.set_ylabel("Вес (кг)", color="orange")
     ax.tick_params(axis='y', labelcolor="orange")
     plt.xticks(rotation=45, ha='right')
-    ax.set_title(f"Прогресс: {exercise}")
+    ax.set_title(f"Прогресс: {text}")
     ax.legend(loc="upper left")
 
-    filename = f"progress_{message.from_user.id}_{exercise}.png"
+    filename = f"progress_{message.from_user.id}_{text}.png"
     plt.savefig(filename, format='png', dpi=120)
     plt.close(fig)
 
     try:
         await message.answer_photo(
             FSInputFile(filename),
-            caption=report_text + recommendation,
+            caption=report_text + "\n" + recommendation,
             reply_markup=main_kb()
         )
     except Exception as e:
@@ -839,7 +853,6 @@ async def show_progress_graph_for_exercise(message: types.Message, exercise: str
 
     if os.path.exists(filename):
         os.remove(filename)
-
 
 @dp.message(lambda m: m.text == "⏰ Напоминания")
 async def reminders_menu(message: types.Message):
