@@ -715,18 +715,17 @@ class ProgressStates(StatesGroup):
 # ===== Обработчик кнопки 📈 Прогресс =====
 # ===== Обработчик кнопки 📈 Прогресс =====
 @dp.message(lambda m: m.text == "📈 Прогресс")
-async def show_progress_menu(message: types.Message, state: FSMContext):
-    user_id = message.from_user.id
-    exercises = await get_exercises(user_id)
+async def show_progress_menu(message: Message, exercises):
+    # Отфильтровать None и пустые значения
+    clean_exercises = [str(ex) for ex in exercises if ex]
 
-    if not exercises:
-        await message.answer("🏋️ У вас пока нет упражнений. Добавьте новое!", reply_markup=main_kb())
+    if not clean_exercises:
+        await message.answer("❌ У тебя пока нет сохранённых упражнений.")
         return
 
-    kb = ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text=ex)] for ex in exercises] + [[KeyboardButton(text="↩ В меню")]],
-        resize_keyboard=True,
-        one_time_keyboard=True
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=ex)] for ex in clean_exercises] + [[KeyboardButton(text="↩ В меню")]],
+        resize_keyboard=True
     )
 
     await message.answer("Выберите упражнение, чтобы посмотреть прогресс:", reply_markup=kb)
