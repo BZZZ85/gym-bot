@@ -716,19 +716,19 @@ class ProgressStates(StatesGroup):
 # ===== Обработчик кнопки 📈 Прогресс =====
 @dp.message(lambda m: m.text == "📈 Прогресс")
 async def show_progress_menu(message: Message, exercises):
-    # Отфильтровать None и пустые значения
-    clean_exercises = [str(ex) for ex in exercises if ex]
-
-    if not clean_exercises:
-        await message.answer("❌ У тебя пока нет сохранённых упражнений.")
+    if not exercises:
+        await message.answer("📭 У тебя пока нет сохранённых упражнений.")
         return
 
-    keyboard = ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text=ex)] for ex in clean_exercises] + [[KeyboardButton(text="↩ В меню")]],
-        resize_keyboard=True
+    keyboard = [
+        [KeyboardButton(text=ex)] for ex in exercises if ex
+    ] + [[KeyboardButton(text="↩ В меню")]]
+
+    await message.answer(
+        "Выбери упражнение, чтобы увидеть свой прогресс 💪",
+        reply_markup=ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
     )
 
-    await message.answer("Выберите упражнение, чтобы посмотреть прогресс:", reply_markup=kb)
     await state.set_state(ShowProgressStates.waiting_for_exercise)
 
 
