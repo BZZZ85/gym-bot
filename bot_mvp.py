@@ -319,7 +319,7 @@ async def suggest_next_progress(user_id: int, exercise: str):
             FROM records
             WHERE user_id = $1 AND exercise = $2
             ORDER BY date DESC
-            LIMIT 2
+            LIMIT 1
         """, user_id, exercise)
 
     if not records:
@@ -330,15 +330,8 @@ async def suggest_next_progress(user_id: int, exercise: str):
     sets = last_record['sets'] or 3
 
     # корректно парсим повторения и веса
-    try:
-        reps_list = [int(r) for r in last_record['reps'].split()]
-    except:
-        reps_list = [10]*sets
-
-    try:
-        weights_list = [float(w) for w in last_record['weight'].split()]
-    except:
-        weights_list = [20.0]*sets
+    reps_list = [int(r) for r in last_record['reps'].split()] if last_record['reps'] else [10]*sets
+    weights_list = [float(w) for w in re.split(r'[\s-]+', last_record['weight'])] if last_record['weight'] else [20.0]*sets
 
     # синхронизируем длину списков
     while len(reps_list) < sets:
@@ -355,23 +348,23 @@ async def suggest_next_progress(user_id: int, exercise: str):
             w_new = w * 0.93
         else:
             w_new = w
-        # округляем до 0.5
+        # округляем до 0.5 кг
         w_new = round(w_new * 2) / 2
         new_weights.append(w_new)
 
-    # формируем отчёт без дублирования старых весов
+    # формируем отчёт
     report = f"🏋️ Прогресс: {exercise.upper()}\n"
-    for r in reversed(records):
-        date_str = r['date'].strftime("%d-%m-%Y")
-        reps_str = '-'.join(r['reps'].split()) if r['reps'] else '0'
-        weights_str = '-'.join(r['weight'].split()) if r['weight'] else '0'
-        report += f"{date_str} — подходы: {r['sets']} | повторений: {reps_str} | вес(кг): {weights_str}\n"
+    date_str = last_record['date'].strftime("%d-%m-%Y")
+    reps_str = '-'.join(map(str, reps_list))
+    weights_str = '-'.join(map(str, weights_list))
+    report += f"{date_str} — подходы: {sets} | повторений: {reps_str} | вес(кг): {weights_str}\n"
 
     report += "\n💡 Рекомендуемый вес для следующей тренировки по подходам:\n"
     for i, w in enumerate(new_weights, 1):
         report += f"Подход {i}: {w} кг\n"
 
     return report
+
 
 
 
@@ -816,10 +809,8 @@ async def show_progress_graph_for_exercise(message: types.Message, exercise: str
         # Парсим повторения
         reps = [int(x) for x in r['reps'].split()] if r['reps'] else []
 
-        # Парсим веса корректно (через пробел или дефис)
-        weights = []
-        if r.get('weight'):
-            weights = [float(w) for w in re.split(r'[\s-]+', r['weight'])]
+        # Парсим веса
+        weights = [float(w) for w in re.split(r'[\s-]+', r['weight'])] if r.get('weight') else []
 
         # Если меньше весов чем повторов, дублируем последний
         while len(weights) < len(reps):
@@ -835,22 +826,55 @@ async def show_progress_graph_for_exercise(message: types.Message, exercise: str
     # ====== Рекомендации по каждому подходу ======
     recommendation = ""
     if recs:
-        last_weights = weights  # берем веса последней записи
+        last_rec = recs[0]
+        reps = [int(x) for x in last_rec['reps'].split()] if last_rec['reps'] else [10]*last_rec['sets']
+        weights = [float(x) for x in re.split(r'[\s-]+', last_rec['weight'])] if last_rec.get('weight') else [20.0]*last_rec['sets']
+
+        while len(weights) < len(reps):
+            weights.append(weights[-1])
+
         new_weights = []
-        for i, w in enumerate(last_weights):
-            r = int(reps[i]) if i < len(reps) else 0
+        for w, r in zip(weights, reps):
             if r >= 10:
-                w_new = w * 1.025  # +2.5%
+                w_new = w * 1.025
             elif r <= 6:
-                w_new = w * 0.93   # -7%
+                w_new = w * 0.93
             else:
                 w_new = w
-            # округляем до ближайшего стандартного блина
-            new_weights.append(round(w_new / 1.25) * 1.25)
+            # округление до 0.5 кг
+            w_new = round(w_new * 2) / 2
+            new_weights.append(w_new)
 
         recommendation = "\n💡 Рекомендуемый вес для следующей тренировки по подходам:\n"
         for idx, w in enumerate(new_weights, start=1):
             recommendation += f"Подход {idx}: {w} кг\n"
+
+    # ====== График ======
+    fig, ax = plt.subplots(figsize=(8, 4), constrained_layout=True)
+    ax.plot(dates, avg_weights, color="orange", marker="o", label="Средний вес (кг)")
+    ax.set_xlabel("Дата")
+    ax.set_ylabel("Вес (кг)", color="orange")
+    ax.tick_params(axis='y', labelcolor="orange")
+    plt.xticks(rotation=45, ha='right')
+    ax.set_title(f"Прогресс: {exercise}")
+    ax.legend(loc="upper left")
+
+    filename = f"progress_{message.from_user.id}_{exercise}.png"
+    plt.savefig(filename, format='png', dpi=120)
+    plt.close(fig)
+
+    try:
+        await message.answer_photo(
+            FSInputFile(filename),
+            caption=report_text + recommendation,
+            reply_markup=main_kb()
+        )
+    except Exception as e:
+        await message.answer(f"Не удалось отправить график: {e}")
+
+    if os.path.exists(filename):
+        os.remove(filename)
+
 
     # ====== График ======
     import matplotlib.pyplot as plt
