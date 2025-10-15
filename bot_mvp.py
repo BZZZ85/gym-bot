@@ -20,6 +20,7 @@ from datetime import datetime, timedelta, time
 import pytz
 from aiogram.types import Message
 from aiogram import F
+import re
 
 # Загружаем локальный .env только если он есть
 if os.path.exists("ton.env"):
@@ -779,58 +780,58 @@ async def show_selected_progress(message: types.Message, state: FSMContext):
 
 
 # ===== Новая функция для одного упражнения =====
+
+
 async def show_progress_graph_for_exercise(message: types.Message, exercise: str, recs: list):
     dates, avg_weights = [], []
     report_text = f"🏋️ Прогресс: {exercise}\n\n"
-
-    last_weights, last_reps = [], []
 
     for r in recs:
         date_str = r['date'].strftime('%d-%m-%Y')
         dates.append(date_str)
 
+        # Парсим повторения
         reps = [int(x) for x in r['reps'].split()] if r['reps'] else []
+
+        # Парсим веса корректно (через пробел или дефис)
         weights = []
         if r.get('weight'):
-            try:
-                weights = [float(x) for x in r['weight'].split()]
-            except ValueError:
-                weights = []
+            weights = [float(w) for w in re.split(r'[\s-]+', r['weight'])]
 
+        # Если меньше весов чем повторов, дублируем последний
         while len(weights) < len(reps):
             weights.append(weights[-1] if weights else 0)
 
-        avg_weight = round(sum(weights) / len(weights), 1) if weights else 0
+        avg_weight = round(sum(weights)/len(weights), 1) if weights else 0
         avg_weights.append(avg_weight)
 
         reps_str = "-".join(map(str, reps)) if reps else "0"
         weights_str = "-".join(map(str, weights)) if weights else "0"
         report_text += f"{date_str} — подходы: {r['sets']} | повторений: {reps_str} | вес(кг): {weights_str}\n"
 
-        # Сохраняем последнюю тренировку для подсказки
-        if not last_weights:
-            last_weights = weights
-            last_reps = reps
-
-    # ====== Рекомендация по каждому подходу ======
-    suggested_weights = []
-    if last_weights and last_reps:
-        for w, r in zip(last_weights, last_reps):
+    # ====== Рекомендации по каждому подходу ======
+    recommendation = ""
+    if recs:
+        last_weights = weights  # берем веса последней записи
+        new_weights = []
+        for i, w in enumerate(last_weights):
+            r = int(reps[i]) if i < len(reps) else 0
             if r >= 10:
                 w_new = w * 1.025  # +2.5%
             elif r <= 6:
                 w_new = w * 0.93   # -7%
             else:
                 w_new = w
-            suggested_weights.append(round_weight_up(round(w_new, 2)))
+            # округляем до ближайшего стандартного блина
+            new_weights.append(round(w_new / 1.25) * 1.25)
 
-        rec_text = "💡 Рекомендуемый вес для следующей тренировки по подходам:\n"
-        for i, w in enumerate(suggested_weights, start=1):
-            rec_text += f"Подход {i}: {w} кг\n"
-    else:
-        rec_text = "💪 Начало положено! Введите веса в следующей тренировке."
+        recommendation = "\n💡 Рекомендуемый вес для следующей тренировки по подходам:\n"
+        for idx, w in enumerate(new_weights, start=1):
+            recommendation += f"Подход {idx}: {w} кг\n"
 
     # ====== График ======
+    import matplotlib.pyplot as plt
+    from aiogram.types import FSInputFile
     fig, ax = plt.subplots(figsize=(8, 4), constrained_layout=True)
     ax.plot(dates, avg_weights, color="orange", marker="o", label="Средний вес (кг)")
     ax.set_xlabel("Дата")
@@ -847,7 +848,7 @@ async def show_progress_graph_for_exercise(message: types.Message, exercise: str
     try:
         await message.answer_photo(
             FSInputFile(filename),
-            caption=report_text + "\n" + rec_text,
+            caption=report_text + recommendation,
             reply_markup=main_kb()
         )
     except Exception as e:
@@ -855,6 +856,7 @@ async def show_progress_graph_for_exercise(message: types.Message, exercise: str
 
     if os.path.exists(filename):
         os.remove(filename)
+
 
 
 
