@@ -393,11 +393,11 @@ def food_keyboard():
         InlineKeyboardButton(text="🍌 Банан", callback_data="food_банан"),
     )
     return kb
-@dp.callback_query_handler(lambda c: c.data.startswith("food_"))
-async def process_food_selection(callback_query: types.CallbackQuery):
-    food_name = callback_query.data[5:]  # убираем "food_"
-    await callback_query.message.answer(f"Сколько грамм {food_name}?")
-
+@router.callback_query(Text(startswith="food_"))
+async def process_food_selection(callback: types.CallbackQuery):
+    food_name = callback.data[5:]  # убираем "food_"
+    await callback.message.answer(f"Сколько грамм {food_name}?")
+    await callback.answer()  # чтобы убрать "часики" на кнопке
 # Дневник пользователей
 user_diary = {}  # ключ: user_id, значение: список всех приёмов пищи
 @router.message(lambda message: message.text == "🥗 Рацион")
