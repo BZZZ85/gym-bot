@@ -22,7 +22,7 @@ from aiogram.types import Message
 from aiogram import F
 import aiohttp
 from aiogram import Router, types
-
+from aiogram.fsm.storage.memory import MemoryStorage
 
 # Загружаем локальный .env только если он есть
 if os.path.exists("ton.env"):
