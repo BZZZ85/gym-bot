@@ -422,19 +422,25 @@ def summarize_nutrition(items):
 
 router = dp  # для простоты
 
-# Команда /start
+# --- Команда /start ---
 @router.message(F.text == "/start")
 async def start(message: types.Message):
-    await message.answer("Привет! Нажми кнопку ниже, чтобы добавить прием пищи:",
-                         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                             [InlineKeyboardButton(text="🍽 Рацион", callback_data="show_food")],
-                         ]))
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🍽 Рацион", callback_data="show_food")],
+    ])
+    await message.answer("Привет! Нажми кнопку ниже, чтобы добавить прием пищи:", reply_markup=keyboard)
 
-# Показ продуктов
+# --- Обработка нажатия "Рацион" ---
 @router.callback_query(F.data == "show_food")
 async def show_food_options(callback: types.CallbackQuery):
+    food_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Яйца", callback_data="food_eggs")],
+        [InlineKeyboardButton(text="Овсянка", callback_data="food_oats")],
+        [InlineKeyboardButton(text="Молоко", callback_data="food_milk")],
+    ])
     await callback.message.answer("Выбери продукт:", reply_markup=food_keyboard)
-    await callback.answer()
+    await callback.answer()  # обязательно, чтобы убрать "часики" в кнопке
+
 
 # Выбор продукта
 @router.callback_query(F.data.startswith("food_"))
