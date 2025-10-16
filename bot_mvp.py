@@ -20,6 +20,8 @@ from datetime import datetime, timedelta, time
 import pytz
 from aiogram.types import Message
 from aiogram import F
+import aiohttp
+
 
 # Загружаем локальный .env только если он есть
 if os.path.exists("ton.env"):
@@ -352,6 +354,105 @@ async def suggest_next_progress(user_id: int, exercise: str) -> str:
 
     await message.answer(text)
 
+API_KEY = "LzcoYkPzgepXTwXcMaEm+w==yAt1WFOi0dH7cwO3"
+
+# Словарь для перевода популярных продуктов с русского на английский
+RU_TO_EN = {
+    "яйца": "eggs",
+    "яйцо": "egg",
+    "овсянка": "oats",
+    "молоко": "milk",
+    "курица": "chicken breast",
+    "рис": "rice",
+    "банан": "banana",
+    "яблоко": "apple",
+    # добавь свои продукты
+}
+
+# Дневник пользователей
+user_diary = {}  # ключ: user_id, значение: список всех приёмов пищи
+
+async def get_nutrition_info(food_query: str):
+    url = f"https://api.calorieninjas.com/v1/nutrition?query={food_query}"
+    headers = {"X-Api-Key": API_KEY}
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers) as response:
+            if response.status != 200:
+                return None
+            data = await response.json()
+            return data.get("items", [])
+
+def translate_to_english(text: str) -> str:
+    """Перевод русских продуктов на английский через словарь"""
+    words = text.lower().split()
+    translated = []
+    for word in words:
+        translated.append(RU_TO_EN.get(word, word))
+    return " ".join(translated)
+
+def summarize_nutrition(items):
+    """Суммирует КБЖУ и формирует текст для пользователя"""
+    total = {"calories": 0, "protein": 0, "fat": 0, "carbohydrates": 0}
+    details = []
+
+    for item in items:
+        name = item["name"].capitalize()
+        kcal = item["calories"]
+        protein = item["protein_g"]
+        fat = item["fat_total_g"]
+        carbs = item["carbohydrates_total_g"]
+
+        details.append(f"{name}: {kcal:.0f} ккал | Б:{protein:.1f} Ж:{fat:.1f} У:{carbs:.1f}")
+        total["calories"] += kcal
+        total["protein"] += protein
+        total["fat"] += fat
+        total["carbohydrates"] += carbs
+
+    summary = (
+        f"🔥 Итого за приём пищи: {total['calories']:.0f} ккал\n"
+        f"Б: {total['protein']:.1f} г | Ж: {total['fat']:.1f} г | У: {total['carbohydrates']:.1f} г"
+    )
+    return details, summary, total
+
+@dp.message_handler(lambda message: message.text.lower().startswith("ел") or message.text.lower().startswith("кушал"))
+async def process_food_entry(message: types.Message):
+    user_text = message.text.lower().replace("ел", "").replace("кушал", "").strip()
+    if not user_text:
+        await message.answer("🍽 Напиши, что ты ел. Например:\n<code>Ел 2 яйца и 100 г овсянки</code>", parse_mode="HTML")
+        return
+
+    await message.answer("🔎 Считаю калорийность...")
+
+    # Переводим продукты на английский
+    food_query = translate_to_english(user_text)
+    items = await get_nutrition_info(food_query)
+    if not items:
+        await message.answer("❌ Не удалось получить данные. Попробуй написать иначе (например: 2 eggs, 100g oats).")
+        return
+
+    details, summary, total_meal = summarize_nutrition(items)
+
+    # Сохраняем приём пищи в дневник
+    user_id = message.from_user.id
+    if user_id not in user_diary:
+        user_diary[user_id] = []
+    user_diary[user_id].append(total_meal)
+
+    # Считаем суммарно за день
+    total_day = {"calories": 0, "protein": 0, "fat": 0, "carbohydrates": 0}
+    for meal in user_diary[user_id]:
+        total_day["calories"] += meal["calories"]
+        total_day["protein"] += meal["protein"]
+        total_day["fat"] += meal["fat"]
+        total_day["carbohydrates"] += meal["carbohydrates"]
+
+    day_summary = (
+        f"📊 Всего за день: {total_day['calories']:.0f} ккал | "
+        f"Б: {total_day['protein']:.1f} г | Ж: {total_day['fat']:.1f} г | У: {total_day['carbohydrates']:.1f} г"
+    )
+
+    text = "🍽 Твое питание:\n\n" + "\n".join(details) + "\n\n" + summary + "\n\n" + day_summary
+    await message.answer(text)
 
 
 
