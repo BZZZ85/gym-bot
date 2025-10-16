@@ -384,6 +384,13 @@ RU_TO_EN = {
     "яблоко": "apple",
     # добавь свои продукты
 }
+def translate_to_english(text: str) -> str:
+    """Переводим русские продукты на английский через словарь"""
+    words = text.lower().split()
+    translated = []
+    for word in words:
+        translated.append(RU_TO_EN.get(word, word))
+    return " ".join(translated)
 
 # Дневник пользователей
 user_diary = {}  # ключ: user_id, значение: список всех приёмов пищи
