@@ -21,6 +21,7 @@ import pytz
 from aiogram.types import Message
 from aiogram import F
 import aiohttp
+from aiogram import Router, types
 
 
 # Загружаем локальный .env только если он есть
@@ -414,7 +415,9 @@ def summarize_nutrition(items):
     )
     return details, summary, total
 
-@dp.message_handler(lambda message: message.text.lower().startswith("ел") or message.text.lower().startswith("кушал"))
+router = Router()  # создаём роутер
+
+@router.message(lambda message: message.text and (message.text.lower().startswith("ел") or message.text.lower().startswith("кушал")))
 async def process_food_entry(message: types.Message):
     user_text = message.text.lower().replace("ел", "").replace("кушал", "").strip()
     if not user_text:
@@ -423,7 +426,6 @@ async def process_food_entry(message: types.Message):
 
     await message.answer("🔎 Считаю калорийность...")
 
-    # Переводим продукты на английский
     food_query = translate_to_english(user_text)
     items = await get_nutrition_info(food_query)
     if not items:
@@ -438,7 +440,7 @@ async def process_food_entry(message: types.Message):
         user_diary[user_id] = []
     user_diary[user_id].append(total_meal)
 
-    # Считаем суммарно за день
+    # Суммарно за день
     total_day = {"calories": 0, "protein": 0, "fat": 0, "carbohydrates": 0}
     for meal in user_diary[user_id]:
         total_day["calories"] += meal["calories"]
