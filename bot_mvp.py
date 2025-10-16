@@ -384,8 +384,7 @@ RU_TO_EN = {
     "яблоко": "apple",
     # добавь свои продукты
 }
-
- def food_keyboard():
+def food_keyboard():
     kb = InlineKeyboardMarkup(row_width=2)
     kb.add(
         InlineKeyboardButton(text="🍝 Макароны", callback_data="food_макароны"),
