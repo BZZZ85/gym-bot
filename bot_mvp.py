@@ -38,9 +38,7 @@ print("DEBUG: available env keys:", sorted(k for k in os.environ.keys() if "BOT"
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
-bot = Bot(token=os.getenv("BOT_TOKEN"))
-dp = Dispatcher(storage=MemoryStorage())
-router = Router()
+
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN не найден. Проверь Variables в Railway или ton.env.")
 if not DATABASE_URL:
@@ -249,8 +247,8 @@ def main_kb():
         keyboard=[
             [KeyboardButton(text="📜 История"), KeyboardButton(text="📈 Прогресс"), KeyboardButton(text="📊 Статистика")],
             [KeyboardButton(text="➕ Добавить подход"), KeyboardButton(text="🗑 Удалить упражнение")],
-            [KeyboardButton(text="⏰ Напоминания"), KeyboardButton(text="🔄 Рестарт бота")],
-            [KeyboardButton(text="🥗 Рацион")]  # новая кнопка для дневника питания
+            [KeyboardButton(text="⏰ Напоминания"), KeyboardButton(text="🔄 Рестарт бота")]
+              # новая кнопка для дневника питания
         ],
         resize_keyboard=True
     )
@@ -391,108 +389,6 @@ user_diary = {}  # user_id -> список приёмов пищи
 class FoodStates(StatesGroup):
     waiting_for_grams = State()
 
-# Клавиатура продуктов
-food_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="Яйца", callback_data="food_eggs")],
-    [InlineKeyboardButton(text="Овсянка", callback_data="food_oats")],
-    [InlineKeyboardButton(text="Молоко", callback_data="food_milk")],
-])
-
-# Получение КБЖУ через CalorieNinjas
-async def get_nutrition_info(food_query: str):
-    url = f"https://api.calorieninjas.com/v1/nutrition?query={food_query}"
-    headers = {"X-Api-Key": API_KEY}
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, headers=headers) as response:
-            if response.status != 200:
-                return None
-            data = await response.json()
-            return data.get("items", [])
-
-def summarize_nutrition(items):
-    total = {"calories": 0, "protein": 0, "fat": 0, "carbohydrates": 0}
-    for item in items:
-        total["calories"] += item["calories"]
-        total["protein"] += item["protein_g"]
-        total["fat"] += item["fat_total_g"]
-        total["carbohydrates"] += item["carbohydrates_total_g"]
-    return total
-
-# --- Бот и диспетчер ---
-
-router = dp  # для простоты
-
-# --- Команда /start ---
-@router.message(F.text == "/start")
-async def start(message: types.Message):
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🍽 Рацион", callback_data="show_food")],
-    ])
-    await message.answer("Привет! Нажми кнопку ниже, чтобы добавить прием пищи:", reply_markup=keyboard)
-
-# --- Обработка нажатия "Рацион" ---
-@router.callback_query(F.data == "show_food")
-async def show_food_options(callback: types.CallbackQuery):
-    food_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Яйца", callback_data="food_eggs")],
-        [InlineKeyboardButton(text="Овсянка", callback_data="food_oats")],
-        [InlineKeyboardButton(text="Молоко", callback_data="food_milk")],
-    ])
-    await callback.message.answer("Выбери продукт:", reply_markup=food_keyboard)
-    await callback.answer()  # обязательно, чтобы убрать "часики" в кнопке
-
-
-# Выбор продукта
-@router.callback_query(F.data.startswith("food_"))
-async def process_food_selection(callback: types.CallbackQuery, state: FSMContext):
-    food_name = callback.data[5:]  # убираем "food_"
-    await state.update_data(food_name=food_name)
-    await callback.message.answer(f"Сколько грамм {food_name}?")
-    await state.set_state(FoodStates.waiting_for_grams)
-    await callback.answer()
-
-# Ввод грамм
-@router.message(F.state == FoodStates.waiting_for_grams)
-async def process_food_grams(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    food_name = data.get("food_name")
-
-    try:
-        grams = float(message.text.replace(",", "."))
-    except ValueError:
-        await message.answer("Пожалуйста, введи число в граммах. Например: 100")
-        return
-
-    query = f"{grams} g {food_name}"
-    items = await get_nutrition_info(query)
-    if not items:
-        await message.answer("❌ Не удалось получить данные о продукте.")
-        await state.clear()
-        return
-
-    nutrition = summarize_nutrition(items)
-
-    # Сохраняем в дневник
-    user_id = message.from_user.id
-    if user_id not in user_diary:
-        user_diary[user_id] = []
-    user_diary[user_id].append(nutrition)
-
-    # Итоги за день
-    total_day = {"calories": 0, "protein": 0, "fat": 0, "carbohydrates": 0}
-    for meal in user_diary[user_id]:
-        total_day["calories"] += meal["calories"]
-        total_day["protein"] += meal["protein"]
-        total_day["fat"] += meal["fat"]
-        total_day["carbohydrates"] += meal["carbohydrates"]
-
-    await message.answer(
-        f"✅ Добавлено: {grams} г {food_name}\n"
-        f"🔥 Приём пищи: {nutrition['calories']:.0f} ккал | Б:{nutrition['protein']:.1f} Ж:{nutrition['fat']:.1f} У:{nutrition['carbohydrates']:.1f}\n\n"
-        f"📊 Всего за день: {total_day['calories']:.0f} ккал | Б:{total_day['protein']:.1f} Ж:{total_day['fat']:.1f} У:{total_day['carbohydrates']:.1f}"
-    )
-
-    await state.clear()
 
 
 # ===== Обработчики =====
