@@ -419,8 +419,7 @@ def summarize_nutrition(items):
     return total
 
 # --- Бот и диспетчер ---
-bot = Bot(token="YOUR_TOKEN_HERE")
-dp = Dispatcher(storage=MemoryStorage())
+
 router = dp  # для простоты
 
 # Команда /start
