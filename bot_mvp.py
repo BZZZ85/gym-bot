@@ -401,6 +401,7 @@ async def open_food_diary(message: types.Message):
         parse_mode="HTML"
     )
 async def get_nutrition_info(food_query: str):
+    """Запрос к CalorieNinjas API"""
     url = f"https://api.calorieninjas.com/v1/nutrition?query={food_query}"
     headers = {"X-Api-Key": API_KEY}
     async with aiohttp.ClientSession() as session:
@@ -419,7 +420,6 @@ def translate_to_english(text: str) -> str:
     return " ".join(translated)
 
 def summarize_nutrition(items):
-    """Суммирует КБЖУ и формирует текст для пользователя"""
     total = {"calories": 0, "protein": 0, "fat": 0, "carbohydrates": 0}
     details = []
 
@@ -457,15 +457,23 @@ async def process_food_entry(message: types.Message):
 
     await message.answer("🔎 Считаю калорийность...")
 
+    # Переводим продукты
     food_query = translate_to_english(user_text)
+
     items = await get_nutrition_info(food_query)
+
+    # Если ничего не нашлось, убираем числа и пробуем снова
     if not items:
-        await message.answer("❌ Не удалось получить данные. Попробуй написать иначе (например: 2 eggs, 100g oats).")
+        food_query_simple = re.sub(r'\d+', '', food_query)
+        items = await get_nutrition_info(food_query_simple)
+
+    if not items:
+        await message.answer("❌ Не удалось найти продукты. Попробуй написать иначе (например: 2 eggs, 100g oats).")
         return
 
     details, summary, total_meal = summarize_nutrition(items)
 
-    # Сохраняем приём пищи в дневник
+    # Сохраняем приём пищи
     user_id = message.from_user.id
     if user_id not in user_diary:
         user_diary[user_id] = []
