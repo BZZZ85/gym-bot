@@ -36,7 +36,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 bot = Bot(token=os.getenv("BOT_TOKEN"))
 dp = Dispatcher(storage=MemoryStorage())
-
+router = Router()
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN не найден. Проверь Variables в Railway или ton.env.")
 if not DATABASE_URL:
@@ -474,7 +474,7 @@ async def process_food_entry(message: types.Message):
 async def ask_food_entry(message: types.Message):
     await message.answer("Напиши, что ты ел сегодня. Например:\nЕл 2 яйца и 100 г овсянки")
 
-
+dp.include_router(router)
 
 # ===== Обработчики =====
 @dp.message(CommandStart())
