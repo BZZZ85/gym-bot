@@ -69,7 +69,8 @@ class HistoryStates(StatesGroup):
 
 class StatisticsStates(StatesGroup):
     waiting_for_exercise = State()
-
+class FoodStates(StatesGroup):
+    waiting_for_grams = State()
 
 
 
@@ -386,32 +387,15 @@ RU_TO_EN = {
     "яблоко": "apple",
     # добавь свои продукты
 }
-def food_keyboard():
-    kb = InlineKeyboardMarkup(row_width=2)
-    kb.add(
-        InlineKeyboardButton(text="🍝 Макароны", callback_data="food_макароны"),
-        InlineKeyboardButton(text="🥛 Молоко", callback_data="food_молоко"),
-        InlineKeyboardButton(text="🍬 Конфета", callback_data="food_конфета"),
-        InlineKeyboardButton(text="🍌 Банан", callback_data="food_банан"),
-    )
-    return kb
-@router.callback_query(lambda c: c.data.startswith("food_"))
-async def process_food_selection(callback: types.CallbackQuery):
-    food_name = callback.data[5:]  # убираем "food_"
-    await callback.message.answer(f"Сколько грамм {food_name}?")
-    await callback.answer()  # закрываем "часики" на кнопке
+# --- Продукты и клавиатура ---
+food_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="Яйца", callback_data="food_eggs")],
+    [InlineKeyboardButton(text="Овсянка", callback_data="food_oats")],
+    [InlineKeyboardButton(text="Молоко", callback_data="food_milk")],
+])
 
-
-# Дневник пользователей
-user_diary = {}  # ключ: user_id, значение: список всех приёмов пищи
-@router.message(lambda message: message.text == "🥗 Рацион")
-async def open_food_diary(message: types.Message):
-    await message.answer(
-        "🍽 Отлично! Напиши, что ты ел сегодня.\nНапример: <code>Ел 2 яйца и 100 г овсянки</code>",
-        parse_mode="HTML"
-    )
+# --- Функция запроса КБЖУ ---
 async def get_nutrition_info(food_query: str):
-    """Запрос к CalorieNinjas API"""
     url = f"https://api.calorieninjas.com/v1/nutrition?query={food_query}"
     headers = {"X-Api-Key": API_KEY}
     async with aiohttp.ClientSession() as session:
@@ -421,96 +405,76 @@ async def get_nutrition_info(food_query: str):
             data = await response.json()
             return data.get("items", [])
 
-def translate_to_english(text: str) -> str:
-    """Перевод русских продуктов на английский через словарь"""
-    words = text.lower().split()
-    translated = []
-    for word in words:
-        translated.append(RU_TO_EN.get(word, word))
-    return " ".join(translated)
-
-# --- Суммируем КБЖУ ---
 def summarize_nutrition(items):
     total = {"calories": 0, "protein": 0, "fat": 0, "carbohydrates": 0}
-    details = []
-
     for item in items:
-        name = item["name"].capitalize()
-        kcal = item["calories"]
-        protein = item["protein_g"]
-        fat = item["fat_total_g"]
-        carbs = item["carbohydrates_total_g"]
+        total["calories"] += item["calories"]
+        total["protein"] += item["protein_g"]
+        total["fat"] += item["fat_total_g"]
+        total["carbohydrates"] += item["carbohydrates_total_g"]
+    return total
 
-        details.append(f"{name}: {kcal:.0f} ккал | Б:{protein:.1f} Ж:{fat:.1f} У:{carbs:.1f}")
-        total["calories"] += kcal
-        total["protein"] += protein
-        total["fat"] += fat
-        total["carbohydrates"] += carbs
+# --- Бот ---
+bot = Bot(token="YOUR_TOKEN_HERE")
+dp = Dispatcher(storage=MemoryStorage())
 
-    summary = (
-        f"🔥 Итого за приём пищи: {total['calories']:.0f} ккал\n"
-        f"Б: {total['protein']:.1f} г | Ж: {total['fat']:.1f} г | У: {total['carbohydrates']:.1f} г"
-    )
-    return details, summary, total
-# --- Команда /start ---
-@router.message(Command("start"))
-async def start(message: types.Message):
-    await message.answer(
-        "Привет! Я твой рациональный помощник 🦾\n"
-        "Нажми кнопку ниже, чтобы добавить приём пищи:",
-        reply_markup=food_keyboard()
-    )
-# --- Нажатие кнопки продукта ---
-@router.callback_query(lambda c: c.data.startswith("food_"))
-async def choose_food(callback: types.CallbackQuery):
-    food_name = callback.data.replace("food_", "")
-    user_id = callback.from_user.id
+# --- Команда "Рацион" ---
+@dp.message(lambda m: m.text == "🍽 Рацион")
+async def show_food_options(message: types.Message):
+    await message.answer("Выбери продукт:", reply_markup=food_keyboard)
 
-    if user_id not in user_diary:
-        user_diary[user_id] = {"meals": []}
-
-    user_diary[user_id]["current_food"] = food_name
+# --- Обработка выбора продукта ---
+@dp.callback_query(lambda c: c.data.startswith("food_"))
+async def process_food_selection(callback: types.CallbackQuery, state: FSMContext):
+    food_name = callback.data[5:]  # убираем "food_"
+    await state.update_data(food_name=food_name)
     await callback.message.answer(f"Сколько грамм {food_name}?")
-    await callback.answer()  # закрываем "часики"
+    await state.set_state(FoodStates.waiting_for_grams)
+    await callback.answer()
 
-# --- Ввод количества грамм ---
-@router.message(lambda message: message.text.isdigit())
-async def process_food_amount(message: types.Message):
-    user_id = message.from_user.id
-    if user_id not in user_diary or "current_food" not in user_diary[user_id]:
+# --- Обработка количества грамм ---
+@dp.message(FoodStates.waiting_for_grams)
+async def process_food_grams(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    food_name = data.get("food_name")
+
+    try:
+        grams = float(message.text.replace(",", "."))
+    except ValueError:
+        await message.answer("Пожалуйста, введи число в граммах. Например: 100")
         return
 
-    food_name = user_diary[user_id]["current_food"]
-    grams = int(message.text)
-    query = f"{grams} g {RU_TO_EN.get(food_name, food_name)}"
-
+    # Получаем КБЖУ
+    query = f"{grams} g {food_name}"
     items = await get_nutrition_info(query)
     if not items:
-        await message.answer("❌ Не удалось получить данные по продукту.")
+        await message.answer("❌ Не удалось получить данные о продукте.")
+        await state.clear()
         return
 
-    details, summary, total_meal = summarize_nutrition(items)
-    user_diary[user_id]["meals"].append(total_meal)
-    del user_diary[user_id]["current_food"]
+    nutrition = summarize_nutrition(items)
 
-    # Суммарно за день
+    # Сохраняем в дневник
+    user_id = message.from_user.id
+    if user_id not in user_diary:
+        user_diary[user_id] = []
+    user_diary[user_id].append(nutrition)
+
+    # Считаем итого за день
     total_day = {"calories": 0, "protein": 0, "fat": 0, "carbohydrates": 0}
-    for meal in user_diary[user_id]["meals"]:
+    for meal in user_diary[user_id]:
         total_day["calories"] += meal["calories"]
         total_day["protein"] += meal["protein"]
         total_day["fat"] += meal["fat"]
         total_day["carbohydrates"] += meal["carbohydrates"]
 
-    day_summary = (
-        f"📊 Всего за день: {total_day['calories']:.0f} ккал | "
-        f"Б: {total_day['protein']:.1f} г | Ж: {total_day['fat']:.1f} г | У: {total_day['carbohydrates']:.1f} г"
+    await message.answer(
+        f"✅ Добавлено: {grams} г {food_name}\n"
+        f"🔥 Приём пищи: {nutrition['calories']:.0f} ккал | Б:{nutrition['protein']:.1f} Ж:{nutrition['fat']:.1f} У:{nutrition['carbohydrates']:.1f}\n\n"
+        f"📊 Всего за день: {total_day['calories']:.0f} ккал | Б:{total_day['protein']:.1f} Ж:{total_day['fat']:.1f} У:{total_day['carbohydrates']:.1f}"
     )
 
-    text = "🍽 Твое питание:\n\n" + "\n".join(details) + "\n\n" + summary + "\n\n" + day_summary
-    await message.answer(text)
-
-
-dp.include_router(router)
+    await state.clear()
 
 # ===== Обработчики =====
 @dp.message(CommandStart())
