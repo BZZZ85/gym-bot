@@ -237,15 +237,19 @@ async def process_new_exercise(message: types.Message, state: FSMContext):
     await ask_for_sets(message, state)
 
 # ===== Главное меню =====
+
+
 def main_kb():
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📜 История"), KeyboardButton(text="📈 Прогресс"), KeyboardButton(text="📊 Статистика")],
             [KeyboardButton(text="➕ Добавить подход"), KeyboardButton(text="🗑 Удалить упражнение")],
-            [KeyboardButton(text="⏰ Напоминания"), KeyboardButton(text="🔄 Рестарт бота")]
+            [KeyboardButton(text="⏰ Напоминания"), KeyboardButton(text="🔄 Рестарт бота")],
+            [KeyboardButton(text="🥗 Рацион")]  # новая кнопка для дневника питания
         ],
         resize_keyboard=True
     )
+
 
 # ===== Работа с БД =====
 async def add_user(user_id, username):
