@@ -387,7 +387,12 @@ RU_TO_EN = {
 
 # Дневник пользователей
 user_diary = {}  # ключ: user_id, значение: список всех приёмов пищи
-
+@router.message(lambda message: message.text == "🥗 Рацион")
+async def open_food_diary(message: types.Message):
+    await message.answer(
+        "🍽 Отлично! Напиши, что ты ел сегодня.\nНапример: <code>Ел 2 яйца и 100 г овсянки</code>",
+        parse_mode="HTML"
+    )
 async def get_nutrition_info(food_query: str):
     url = f"https://api.calorieninjas.com/v1/nutrition?query={food_query}"
     headers = {"X-Api-Key": API_KEY}
