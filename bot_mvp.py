@@ -34,6 +34,8 @@ print("DEBUG: available env keys:", sorted(k for k in os.environ.keys() if "BOT"
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
+bot = Bot(token=os.getenv("BOT_TOKEN"))
+dp = Dispatcher(storage=MemoryStorage())
 
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN не найден. Проверь Variables в Railway или ton.env.")
