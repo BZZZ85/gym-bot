@@ -305,6 +305,15 @@ async def get_user_records(user_id):
             user_id
         )
         return rows
+        # Клавиатура с одной кнопкой
+food_keyboard = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="🍽 Что ел")]
+    ],
+    resize_keyboard=True,
+    one_time_keyboard=True
+)
+
 # Доступные блины
 AVAILABLE_WEIGHTS = [20, 15, 10, 5, 2.5, 1.25]
 
@@ -416,7 +425,12 @@ def summarize_nutrition(items):
     return details, summary, total
 
 router = Router()  # создаём роутер
-
+@router.message(commands=["start"])
+async def start(message: types.Message):
+    await message.answer(
+        "Привет! Я твой рациональный помощник 🦾\nНажми кнопку ниже, чтобы ввести прием пищи:",
+        reply_markup=food_keyboard
+    )
 @router.message(lambda message: message.text and (message.text.lower().startswith("ел") or message.text.lower().startswith("кушал")))
 async def process_food_entry(message: types.Message):
     user_text = message.text.lower().replace("ел", "").replace("кушал", "").strip()
@@ -455,7 +469,9 @@ async def process_food_entry(message: types.Message):
 
     text = "🍽 Твое питание:\n\n" + "\n".join(details) + "\n\n" + summary + "\n\n" + day_summary
     await message.answer(text)
-
+@router.message(lambda message: message.text == "🍽 Что ел")
+async def ask_food_entry(message: types.Message):
+    await message.answer("Напиши, что ты ел сегодня. Например:\nЕл 2 яйца и 100 г овсянки")
 
 
 
