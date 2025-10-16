@@ -417,8 +417,7 @@ def summarize_nutrition(items):
     return total
 
 # --- Бот ---
-bot = Bot(token="YOUR_TOKEN_HERE")
-dp = Dispatcher(storage=MemoryStorage())
+
 
 # --- Команда "Рацион" ---
 @dp.message(lambda m: m.text == "🍽 Рацион")
