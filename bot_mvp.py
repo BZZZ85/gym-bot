@@ -739,30 +739,6 @@ class ShowProgressStates(StatesGroup):
     waiting_for_exercise = State()
 
 
-# ===== Обработчик выбора упражнения =====
-@dp.message(ShowProgressStates.waiting_for_exercise)
-async def show_selected_progress(message: types.Message, state: FSMContext):
-    text = message.text.strip()
-    if text == "↩ В меню":
-        await start(message, state)
-        return
-
-    user_id = message.from_user.id
-    records = await get_user_records(user_id)
-    if not records:
-        await message.answer("У вас пока нет записей.", reply_markup=main_kb())
-        await state.clear()
-        return
-
-    # Фильтруем записи по выбранному упражнению
-    selected_records = [r for r in records if r['exercise'] == text]
-    if not selected_records:
-        await message.answer("Нет записей по выбранному упражнению.", reply_markup=main_kb())
-        await state.clear()
-        return
-
-    await show_progress_graph_for_exercise(message, text, selected_records)
-    await state.clear()
 
 
 @dp.message(ShowProgressStates.waiting_for_exercise)
