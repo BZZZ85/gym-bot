@@ -424,8 +424,7 @@ def summarize_nutrition(items):
     )
     return details, summary, total
 
-router = Router()  # создаём роутер
-@router.message(commands=["start"])
+router.message(Command("start"))
 async def start(message: types.Message):
     await message.answer(
         "Привет! Я твой рациональный помощник 🦾\nНажми кнопку ниже, чтобы ввести прием пищи:",
