@@ -337,13 +337,21 @@ async def suggest_next_progress(user_id: int, exercise: str) -> str:
 
     # Рассчитываем +5% и округляем вверх
     suggested_weights = [round_up_weight(w * 1.05) for w in last_weights]
+    recommended_weights = []
+    for i, (reps, weight) in enumerate(zip(last_reps, last_weights)):
+        if new_reps and len(new_reps) > i:
+            adjusted = adjust_weight_for_reps(weight, reps, new_reps[i])
+        else:
+            adjusted = math.ceil(weight * 1.05)  # стандартное +5%
+        recommended_weights.append(adjusted)
 
     # Формируем текст рекомендации
-    result = f"💡 Рекомендуемый вес для следующей тренировки по подходам:\n"
-    for i, w in enumerate(suggested_weights, start=1):
-        result += f"Подход {i}: {w} кг\n"
+    text = "💡 Рекомендуемый вес для следующей тренировки по подходам:\n"
+    for i, w in enumerate(recommended_weights, 1):
+        text += f"Подход {i}: {w} кг\n"
 
-    return result
+    await message.answer(text)
+
 
 
 
@@ -976,6 +984,27 @@ async def show_statistics_for_exercise(message: types.Message, state: FSMContext
 
     await message.answer(msg, reply_markup=main_kb())
     await state.clear()
+import math
+
+def adjust_weight_for_reps(previous_weight: float, previous_reps: int, new_reps: int) -> float:
+    """
+    Корректирует рекомендуемый вес, если количество повторений изменилось.
+    Формула основана на модели Эпли (Epley):
+        1RM ≈ вес * (1 + повторы / 30)
+    """
+    if previous_reps <= 0 or new_reps <= 0:
+        return previous_weight
+
+    # Вычисляем примерный 1RM
+    one_rm = previous_weight * (1 + previous_reps / 30)
+
+    # Подбираем новый вес под другое количество повторений
+    new_weight = one_rm / (1 + new_reps / 30)
+
+    # Округляем в большую сторону до 1 кг
+    new_weight = math.ceil(new_weight)
+
+    return new_weight
 
 
 
