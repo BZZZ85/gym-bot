@@ -23,7 +23,7 @@ from aiogram import F
 import aiohttp
 from aiogram import Router, types
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.filters.text import Text
+
 
 
 # Загружаем локальный .env только если он есть
@@ -395,11 +395,12 @@ def food_keyboard():
         InlineKeyboardButton(text="🍌 Банан", callback_data="food_банан"),
     )
     return kb
-@router.callback_query(Text(startswith="food_"))
+@router.callback_query(lambda c: c.data.startswith("food_"))
 async def process_food_selection(callback: types.CallbackQuery):
     food_name = callback.data[5:]  # убираем "food_"
     await callback.message.answer(f"Сколько грамм {food_name}?")
-    await callback.answer()  # убрать "часики" на кнопке
+    await callback.answer()  # закрываем "часики" на кнопке
+
 
 # Дневник пользователей
 user_diary = {}  # ключ: user_id, значение: список всех приёмов пищи
