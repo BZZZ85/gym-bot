@@ -230,12 +230,11 @@ async def process_new_exercise(message: types.Message, state: FSMContext):
         await start(message, state)
         return
 
-    # Добавляем упражнение в БД
-    await add_exercise_to_db(user_id, text)
+    # добавляем новое упражнение в exercises (список упражнений)
+    await add_exercise(user_id, text)
 
     await state.update_data(exercise=text)
     await message.answer(f"✅ Упражнение '{text}' добавлено!")
-
     await ask_for_sets(message, state)
 
 # ===== Главное меню =====
@@ -446,7 +445,6 @@ async def add_approach_button(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     exercises = await get_exercises(user_id)
 
-
     if not exercises:
         await message.answer(
             "У вас пока нет упражнений. Добавьте новое!",
@@ -578,15 +576,17 @@ async def process_exercise(message: types.Message, state: FSMContext):
         return
 
     exercises = [ex.lower() for ex in await get_exercises(user_id) if ex]
+
     if text == "➕ Добавить новое упражнение":
         await message.answer("Введите название нового упражнения:")
         await state.set_state(AddApproachStates.waiting_for_new_exercise)
         return
-    elif text.lower() not in exercises:
+
+    if text.lower() not in exercises:
         await message.answer("❗ Выберите упражнение из списка или добавьте новое.")
         return
 
-    # 👉 Без вызова suggest_next_progress
+    # сохраняем выбранное упражнение в state
     await state.update_data(exercise=text)
     await ask_for_sets(message, state)
 
@@ -599,11 +599,11 @@ async def process_exercise(message: types.Message, state: FSMContext):
 async def ask_for_sets(message: types.Message, state: FSMContext):
     kb = ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="1️⃣"), KeyboardButton(text="2️⃣"), KeyboardButton(text="3️⃣")],
-            [KeyboardButton(text="4️⃣"), KeyboardButton(text="5️⃣")],
+            [KeyboardButton(text=str(i)) for i in range(1, 6)],
             [KeyboardButton(text="↩ В меню")]
         ],
-        resize_keyboard=True, one_time_keyboard=True
+        resize_keyboard=True,
+        one_time_keyboard=True
     )
     await message.answer("Выберите количество подходов:", reply_markup=kb)
     await state.set_state(AddApproachStates.waiting_for_sets)
@@ -617,7 +617,7 @@ async def process_sets(message: types.Message, state: FSMContext):
         return
 
     try:
-        sets = int(text[0])
+        sets = int(text)
     except ValueError:
         await message.answer("❗ Пожалуйста, выберите количество подходов с кнопок.")
         return
@@ -625,7 +625,6 @@ async def process_sets(message: types.Message, state: FSMContext):
     await state.update_data(sets=sets)
     await message.answer(f"Введите количество повторений для каждого из {sets} подходов через пробел (например: 10 10 12):")
     await state.set_state(AddApproachStates.waiting_for_reps)
-
 
 @dp.message(AddApproachStates.waiting_for_reps)
 async def process_reps(message: types.Message, state: FSMContext):
@@ -642,7 +641,6 @@ async def process_reps(message: types.Message, state: FSMContext):
         await message.answer(f"❗ Вы должны ввести {sets} чисел.")
         return
 
-    # Сохраняем в state и спрашиваем веса
     await state.update_data(reps=reps)
     await message.answer(f"Введите вес для каждого подхода через пробел (например: 60 70 80):")
     await state.set_state(AddApproachStates.waiting_for_weight)
@@ -658,17 +656,19 @@ async def process_weight(message: types.Message, state: FSMContext):
         return
 
     data = await state.get_data()
-    reps = data['reps']
-    sets = data['sets']
     exercise = data['exercise']
+    sets = data['sets']
+    reps = data['reps']
 
-    # Если весов меньше, чем подходов, дублируем последний
+    # если весов меньше чем подходов — дублируем последний
     while len(weights) < sets:
         weights.append(weights[-1])
 
+    # сохраняем запись в records (каждый подход отдельно)
     await save_record(message.from_user.id, exercise, sets, reps, weights)
+
     await message.answer(
-        f"✅ Записано: {exercise} — подходы: {sets}, повторений: {reps}, вес: {weights}",
+        f"✅ Записано: {exercise}\nПодходов: {sets}\nПовторений: {reps}\nВес: {weights}",
         reply_markup=main_kb()
     )
     await state.clear()
