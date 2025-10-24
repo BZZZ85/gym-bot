@@ -146,30 +146,14 @@ async def init_db():
 # ===== Функция вставки упражнения в БД с весом =====
 async def add_exercise_to_db(user_id, exercise_text, approach=1, reps="", weights=None):
     """
-    Добавляет новое упражнение в таблицу records.
+    Добавляет новую запись о подходе в таблицу records.
     weights: список весов для каждого подхода
     """
     async with db_pool.acquire() as conn:
-        # Проверим, есть ли уже запись с таким упражнением (не обязательно)
-        exists = await conn.fetchrow(
-            "SELECT id FROM records WHERE user_id=$1 AND exercise=$2 AND record_type='training'",
-            user_id, exercise_text.strip()
-        )
-
-        if exists:
-            # Обновляем последнюю запись
-            await conn.execute("""
-                UPDATE records
-                SET reps=$1, weight=$2, record_type='training', date=NOW()
-                WHERE user_id=$3 AND exercise=$4
-            """, str(reps), " ".join(map(str, weights)) if weights else None, user_id, exercise_text.strip())
-            return
-
-        # Добавляем новую тренировку
         await conn.execute("""
-            INSERT INTO records (user_id, exercise, reps, weight, record_type, date)
-            VALUES ($1, $2, $3, $4, 'training', NOW())
-        """, user_id, exercise_text.strip(), str(reps), " ".join(map(str, weights)) if weights else None)
+            INSERT INTO records (user_id, exercise, sets, reps, weight, record_type, date)
+            VALUES ($1, $2, $3, $4, $5, 'training', NOW())
+        """, user_id, exercise_text.strip(), approach, str(reps), " ".join(map(str, weights)) if weights else None)
 async def get_exercises(user_id):
     async with db_pool.acquire() as conn:
         rows = await conn.fetch("""
@@ -542,17 +526,27 @@ async def new_exercise(message: types.Message, state: FSMContext):
         await message.answer("❗ Неверный формат. Пример: Жим лежа 3 10 12 15 60")
         return
 
-    exercise_text, approach, reps, weight = parsed
-    await add_exercise_to_db(user_id, exercise_text, approach, reps, weight)
+    exercise_text, approach, reps_str, weight = parsed
+
+    # превращаем reps в список чисел
+    reps_list = list(map(int, reps_str.split()))
+
+    # создаём список весов для каждого подхода
+    weights_list = [weight] * approach
+
+    # добавляем новую запись в records
+    await add_exercise_to_db(user_id, exercise_text, approach, reps_list, weights_list)
+
     await message.answer(
-        f"✅ Добавлено:\nУпражнение: {exercise_text}\nПодходов: {approach}\nПовторений: {reps}\nВес: {weight} кг"
+        f"✅ Добавлено:\nУпражнение: {exercise_text}\nПодходов: {approach}\nПовторений: {reps_list}\nВес: {weights_list} кг"
     )
 
-    # Получаем актуальный список упражнений
+    # Обновляем список упражнений
     exercises = await get_exercises(user_id)
     kb = exercises_kb(exercises)
     await message.answer("Выберите упражнение или добавьте новое:", reply_markup=kb)
     await state.set_state(AddApproachStates.waiting_for_exercise)
+
 
 
     # Фильтруем None
