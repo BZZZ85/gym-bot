@@ -144,7 +144,7 @@ async def init_db():
 
 
 # ===== Функция вставки упражнения в БД с весом =====
-aasync def add_exercise_to_db(user_id, exercise_text, approach=1, reps="", weights=None):
+async def add_exercise_to_db(user_id, exercise_text, approach=1, reps="", weights=None):
     """
     Добавляет новое упражнение в таблицу records.
     weights: список весов для каждого подхода
