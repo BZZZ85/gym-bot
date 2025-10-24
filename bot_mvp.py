@@ -163,11 +163,11 @@ async def add_exercise_to_db(user_id, exercise_text, approach=1, reps=None, weig
 async def get_exercises(user_id):
     async with db_pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT DISTINCT exercise 
-            FROM records 
+            SELECT DISTINCT exercise
+            FROM records
             WHERE user_id=$1
         """, user_id)
-    return [r['exercise'] for r in rows]
+    return [r['exercise'] for r in rows if r['exercise']]
 
 @dp.message(Command("прогресс"))
 async def progress_command(message: Message):
@@ -269,13 +269,6 @@ async def add_user(user_id, username):
 
 
 
-async def add_exercise(user_id, exercise):
-    async with db_pool.acquire() as conn:
-        await conn.execute(
-            "INSERT INTO exercises (user_id, exercise) VALUES ($1, $2)",
-            user_id,
-            exercise
-        )
 
 
 async def save_record(user_id, exercise, reps_list, weights_list=None):
