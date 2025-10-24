@@ -145,18 +145,12 @@ async def init_db():
 
 # ===== Функция вставки упражнения в БД с весом =====
 async def add_exercise_to_db(user_id, exercise_text, approach=1, reps=None, weights=None):
-    """
-    Добавляет новый подход/тренировку в records.
-    Каждый подход — отдельная запись, старые не трогаются.
-    """
+    reps_str = " ".join(map(str, reps)) if reps else ""
+    weight_str = " ".join(map(str, weights)) if weights else None
     async with db_pool.acquire() as conn:
-        reps_str = " ".join(map(str, reps)) if reps else ""
-        weight_str = " ".join(map(str, weights)) if weights else None
-
-        # Добавляем каждую тренировку как отдельную запись
         await conn.execute("""
-            INSERT INTO records (user_id, exercise, sets, reps, weight, record_type, date)
-            VALUES ($1, $2, $3, $4, $5, 'training', NOW())
+            INSERT INTO records (user_id, exercise, sets, reps, weight, date)
+            VALUES ($1, $2, $3, $4, $5, NOW())
         """, user_id, exercise_text.strip(), approach, reps_str, weight_str)
 
 
@@ -193,14 +187,24 @@ async def progress_command(message: Message):
 @dp.message(lambda message: message.text == "📈 Прогресс")
 async def progress_button_handler(message: Message, state: FSMContext):
     user_id = message.from_user.id
+
     async with db_pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT DISTINCT exercise FROM exercises
-            WHERE user_id = $1 AND exercise IS NOT NULL AND exercise != ''
+            SELECT DISTINCT exercise
+            FROM records
+            WHERE user_id = $1
+              AND exercise IS NOT NULL
+              AND exercise != ''
+              AND record_type = 'training'
         """, user_id)
         exercises = [r["exercise"] for r in rows]
 
+    if not exercises:
+        await message.answer("У тебя пока нет записанных тренировок 💪")
+        return
+
     await show_progress_menu(message, exercises, state)
+
 
 
 def parse_exercise_input(text: str):
@@ -221,15 +225,7 @@ def parse_exercise_input(text: str):
     return exercise_text, approach, reps, weight
 
 
-# ===== FSM-хэндлер для добавления нового упражнения =====
-@dp.message(AddApproachStates.waiting_for_new_exercise)
-async def process_new_exercise(message: types.Message, state: FSMContext):
-    text = message.text.strip()
-    user_id = message.from_user.id
 
-    if text == "↩ В меню":
-        await start(message, state)
-        return
 
     # добавляем новое упражнение в exercises (список упражнений)
     await add_exercise(user_id, text)
@@ -401,17 +397,8 @@ def sets_kb():
         resize_keyboard=True,
         one_time_keyboard=True
     )
-# ===== Функция удаления упражнения из БД =====
-async def delete_exercise_from_db(user_id: int, exercise: str):
-    """
-    Удаляет упражнение пользователя из таблицы exercises.
-    """
-    async with db_pool.acquire() as conn:
-        await conn.execute(
-            "DELETE FROM exercises WHERE user_id=$1 AND exercise=$2",
-            user_id,
-            exercise
-        )
+
+
 
 # ===== Добавить подход =====
 # ===== Функция для клавиатуры с упражнениями =====
@@ -701,7 +688,7 @@ async def process_exercise_deletion(message: types.Message, state: FSMContext):
         return
 
     # Удаляем упражнение
-    await delete_exercise_from_db(user_id, text)
+    
     await message.answer(f"✅ Упражнение '{text}' удалено.", reply_markup=main_kb())
     await state.clear()
 
