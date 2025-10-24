@@ -269,12 +269,6 @@ async def add_user(user_id, username):
 
 
 
-async def get_exercises(user_id):
-    global db_pool
-    async with db_pool.acquire() as conn:
-        rows = await conn.fetch("SELECT exercise FROM exercises WHERE user_id=$1", user_id)
-        return [r['exercise'] for r in rows]
-
 async def add_exercise(user_id, exercise):
     async with db_pool.acquire() as conn:
         await conn.execute(
@@ -284,26 +278,29 @@ async def add_exercise(user_id, exercise):
         )
 
 
-async def save_record(user_id, exercise, sets, reps_list, weights_list=None):
+async def save_record(user_id, exercise, reps_list, weights_list=None):
     """
-    Сохраняет запись тренировки с повторениями и весами по подходам.
+    Сохраняем каждый подход как отдельную запись.
+    reps_list — список повторений для каждого подхода
+    weights_list — список весов для каждого подхода (если None, ставим 0)
     """
-    reps_str = " ".join(map(str, reps_list))
+    if weights_list is None:
+        weights_list = [0] * len(reps_list)
 
-    # Если веса переданы
-    if weights_list:
-        # Если весов меньше чем повторов, дублируем последний
-        if len(weights_list) < len(reps_list):
-            weights_list = weights_list + [weights_list[-1]] * (len(reps_list) - len(weights_list))
-        weight_str = " ".join(map(str, weights_list))
-    else:
-        weight_str = None
+    # Если весов меньше подходов, дублируем последний
+    while len(weights_list) < len(reps_list):
+        weights_list.append(weights_list[-1])
 
     async with db_pool.acquire() as conn:
-        await conn.execute(
-            "INSERT INTO records (user_id, exercise, sets, reps, weight) VALUES ($1, $2, $3, $4, $5)",
-            user_id, exercise, sets, reps_str, weight_str
-        )
+        for reps, weight in zip(reps_list, weights_list):
+            await conn.execute(
+                """
+                INSERT INTO records (user_id, exercise, sets, reps, weight, date)
+                VALUES ($1, $2, 1, $3, $4, NOW())
+                """,
+                user_id, exercise, str(reps), str(weight)
+            )
+
 
 async def get_user_records(user_id):
     global db_pool
@@ -631,18 +628,18 @@ async def process_sets(message: types.Message, state: FSMContext):
 async def process_reps(message: types.Message, state: FSMContext):
     text = message.text.strip()
     try:
-        reps = list(map(int, text.split()))
+        reps_list = list(map(int, text.split()))
     except ValueError:
         await message.answer("❗ Введите числа через пробел.")
         return
 
     data = await state.get_data()
     sets = data.get("sets")
-    if len(reps) != sets:
+    if len(reps_list) != sets:
         await message.answer(f"❗ Вы должны ввести {sets} чисел.")
         return
 
-    await state.update_data(reps=reps)
+    await state.update_data(reps_list=reps_list)
     await message.answer(f"Введите вес для каждого подхода через пробел (например: 60 70 80):")
     await state.set_state(AddApproachStates.waiting_for_weight)
 
@@ -651,25 +648,24 @@ async def process_reps(message: types.Message, state: FSMContext):
 async def process_weight(message: types.Message, state: FSMContext):
     text = message.text.strip()
     try:
-        weights = list(map(float, text.split()))
+        weights_list = list(map(float, text.split()))
     except ValueError:
         await message.answer("❗ Введите числа через пробел.")
         return
 
     data = await state.get_data()
     exercise = data['exercise']
-    sets = data['sets']
-    reps = data['reps']
+    reps_list = data['reps_list']
+    sets = len(reps_list)
 
-    # если весов меньше чем подходов — дублируем последний
-    while len(weights) < sets:
-        weights.append(weights[-1])
+    # Дублируем последний вес, если весов меньше подходов
+    while len(weights_list) < sets:
+        weights_list.append(weights_list[-1])
 
-    # сохраняем запись в records (каждый подход отдельно)
-    await save_record(message.from_user.id, exercise, sets, reps, weights)
+    await save_record(message.from_user.id, exercise, reps_list, weights_list)
 
     await message.answer(
-        f"✅ Записано: {exercise}\nПодходов: {sets}\nПовторений: {reps}\nВес: {weights}",
+        f"✅ Записано: {exercise}\nПодходов: {sets}\nПовторений: {reps_list}\nВес: {weights_list}",
         reply_markup=main_kb()
     )
     await state.clear()
