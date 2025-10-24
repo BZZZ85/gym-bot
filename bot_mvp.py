@@ -144,31 +144,33 @@ async def init_db():
 
 
 # ===== Функция вставки упражнения в БД с весом =====
-async def add_exercise_to_db(user_id, exercise_text, approach=1, reps="", weights=None):
+aasync def add_exercise_to_db(user_id, exercise_text, approach=1, reps="", weights=None):
     """
-    Добавляет новое упражнение, если его ещё нет у пользователя.
+    Добавляет новое упражнение в таблицу records.
     weights: список весов для каждого подхода
     """
     async with db_pool.acquire() as conn:
+        # Проверим, есть ли уже запись с таким упражнением (не обязательно)
         exists = await conn.fetchrow(
-            "SELECT id FROM exercises WHERE user_id=$1 AND exercise=$2",
+            "SELECT id FROM records WHERE user_id=$1 AND exercise=$2 AND record_type='training'",
             user_id, exercise_text.strip()
         )
+
         if exists:
-            # Если упражнение уже есть, можно обновить reps и weights
-            await conn.execute(
-                "UPDATE exercises SET approach=$1, reps=$2, weight=$3 WHERE user_id=$4 AND exercise=$5",
-                approach, reps, " ".join(map(str, weights)) if weights else None, user_id, exercise_text.strip()
-            )
+            # Обновляем последнюю запись
+            await conn.execute("""
+                UPDATE records
+                SET reps=$1, weight=$2, record_type='training', date=NOW()
+                WHERE user_id=$3 AND exercise=$4
+            """, str(reps), " ".join(map(str, weights)) if weights else None, user_id, exercise_text.strip())
             return
 
-        await conn.execute(
-            """
-            INSERT INTO exercises (user_id, exercise, approach, reps, weight)
-            VALUES ($1, $2, $3, $4, $5)
-            """,
-            user_id, exercise_text.strip(), approach, reps, " ".join(map(str, weights)) if weights else None
-        )
+        # Добавляем новую тренировку
+        await conn.execute("""
+            INSERT INTO records (user_id, exercise, reps, weight, record_type, date)
+            VALUES ($1, $2, $3, $4, 'training', NOW())
+        """, user_id, exercise_text.strip(), str(reps), " ".join(map(str, weights)) if weights else None)
+
 @dp.message(Command("прогресс"))
 async def progress_command(message: Message):
     """
@@ -446,6 +448,7 @@ def exercises_kb(exercises: list[str]):
 async def add_approach_button(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     exercises = await get_exercises(user_id)
+
 
     if not exercises:
         await message.answer(
