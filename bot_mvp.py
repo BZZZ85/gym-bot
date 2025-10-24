@@ -146,18 +146,19 @@ async def init_db():
 # ===== Функция вставки упражнения в БД с весом =====
 async def add_exercise_to_db(user_id, exercise_text, approach=1, reps=None, weights=None):
     """
-    Добавляет новый подход для упражнения в таблицу records.
-    reps: список повторений
-    weights: список весов
+    Добавляет новый подход/тренировку в records.
+    Каждый подход — отдельная запись, старые не трогаются.
     """
     async with db_pool.acquire() as conn:
         reps_str = " ".join(map(str, reps)) if reps else ""
         weight_str = " ".join(map(str, weights)) if weights else None
 
+        # Добавляем каждую тренировку как отдельную запись
         await conn.execute("""
             INSERT INTO records (user_id, exercise, sets, reps, weight, record_type, date)
             VALUES ($1, $2, $3, $4, $5, 'training', NOW())
         """, user_id, exercise_text.strip(), approach, reps_str, weight_str)
+
 
 async def get_exercises(user_id):
     async with db_pool.acquire() as conn:
