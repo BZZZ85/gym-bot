@@ -72,6 +72,15 @@ class StatisticsStates(StatesGroup):
 class FoodStates(StatesGroup):
     waiting_for_grams = State()
 
+@dp.message(lambda m: m.text == "📋 Проверить БД")
+async def check_db(message: types.Message):
+    async with db_pool.acquire() as conn:
+        rows = await conn.fetch("SELECT * FROM records WHERE user_id=$1", message.from_user.id)
+    if not rows:
+        await message.answer("❌ В базе нет записей")
+    else:
+        text = "\n".join([f"{r['exercise']} — {r['reps']} повторений, {r['weight']} кг" for r in rows])
+        await message.answer(f"✅ Найдено {len(rows)} записей:\n\n{text}")
 
 
 # ===== Подключение к БД и инициализация таблиц =====
