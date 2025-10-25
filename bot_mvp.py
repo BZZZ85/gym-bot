@@ -780,7 +780,6 @@ async def show_history(message: types.Message, state: FSMContext):
         await state.clear()
         return
 
-    # Группируем по дате (без времени)
     from collections import defaultdict
     grouped = defaultdict(list)
     for r in records:
@@ -788,22 +787,30 @@ async def show_history(message: types.Message, state: FSMContext):
         grouped[date_str].append(r)
 
     msg_text = f"📊 Последние 10 тренировок: {text}\n\n"
+
     for date_str, day_records in grouped.items():
-        msg_text += f"{date_str} — всего подходов: {sum(r['sets'] for r in day_records)}\n"
+        total_sets = sum(r['sets'] for r in day_records)
+        msg_text += f"{date_str} — всего подходов: {total_sets}\n"
+
+        set_counter = 1  # общий счётчик подходов за день
         for r in day_records:
             reps_list = r['reps'].split() if r['reps'] else ['0'] * r['sets']
             weights_list = r['weight'].split() if r.get('weight') else ['0'] * r['sets']
-            # выравниваем длину списков под количество подходов
+
             while len(reps_list) < r['sets']:
                 reps_list.append(reps_list[-1])
             while len(weights_list) < r['sets']:
                 weights_list.append(weights_list[-1])
+
             for i in range(r['sets']):
-                msg_text += f"  {i+1}️⃣ {reps_list[i]} повторений | {weights_list[i]} кг\n"
+                msg_text += f"  {set_counter}️⃣ {reps_list[i]} повторений | {weights_list[i]} кг\n"
+                set_counter += 1
+
         msg_text += "-"*20 + "\n"
 
     await message.answer(msg_text, reply_markup=main_kb())
     await state.clear()
+
 
 
 
