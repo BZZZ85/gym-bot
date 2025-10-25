@@ -852,40 +852,91 @@ async def show_selected_progress(message: types.Message, state: FSMContext):
         return
 
     user_id = message.from_user.id
-    # Получаем все записи для выбранного упражнения
-    records = await db_pool.fetch(
-        "SELECT * FROM records WHERE user_id=$1 AND exercise=$2 ORDER BY date DESC LIMIT 10",
-        user_id, text
-    )
-
+    records = await get_user_records(user_id)
     if not records:
+        await message.answer("У вас пока нет записей.", reply_markup=main_kb())
+        await state.clear()
+        return
+
+    # Фильтруем записи по выбранному упражнению
+    selected_records = [r for r in records if r['exercise'] == text]
+    if not selected_records:
         await message.answer("Нет записей по выбранному упражнению.", reply_markup=main_kb())
         await state.clear()
         return
 
-    msg_text = f"📊 Последние 10 тренировок: {text}\n\n"
+    # ===== Подготовка текста прогресса =====
+    records_by_date = defaultdict(list)
+    for r in selected_records:
+        records_by_date[r['date'].strftime('%d-%m-%Y')].append(r)
+
+    report_text = f"🏋️ Прогресс: {text}\n\n"
     last_weights_per_set = []
+    dates, avg_weights = [], []
 
-    for r in records:
-        reps_list = r['reps'].split() if r['reps'] else []
-        weights_list = r['weight'].split() if r['weight'] else ['0'] * r['sets']
-        msg_text += f"{r['date'].strftime('%d-%m-%Y')} — всего подходов: {r['sets']}\n"
-        for i in range(r['sets']):
-            rep = reps_list[i] if i < len(reps_list) else reps_list[-1]
-            w = weights_list[i] if i < len(weights_list) else weights_list[-1]
-            msg_text += f"  {i+1}️⃣ {rep} повторений | {w} кг\n"
-        msg_text += "-"*20 + "\n"
-        last_weights_per_set.append(weights_list)
+    for date, records_on_date in sorted(records_by_date.items(), reverse=True):
+        total_sets = sum(r['sets'] for r in records_on_date)
+        report_text += f"{date} — всего подходов: {total_sets}\n"
+        counter = 1
+        daily_weights = []
 
-    # Рекомендация для следующей тренировки
+        for r in records_on_date:
+            reps_list = [int(x) for x in r['reps'].split()] if r['reps'] else []
+            weights_list = [float(x) for x in r['weight'].split()] if r.get('weight') else [0]*r['sets']
+            while len(weights_list) < len(reps_list):
+                weights_list.append(weights_list[-1] if weights_list else 0)
+
+            last_weights_per_set.append(weights_list)
+            daily_weights.extend(weights_list)
+
+            for i in range(r['sets']):
+                rep = reps_list[i] if i < len(reps_list) else reps_list[-1]
+                w = weights_list[i] if i < len(weights_list) else weights_list[-1]
+                report_text += f"  {counter}️⃣ {rep} повторений | {w} кг\n"
+                counter += 1
+
+        report_text += "-"*20 + "\n"
+
+        # Для графика — средний вес за день
+        avg_weights.append(round(sum(daily_weights)/len(daily_weights), 1) if daily_weights else 0)
+        dates.append(date)
+
+    # ===== Рекомендации по следующей тренировке =====
+    recommendation = ""
     if last_weights_per_set:
-        last_weights = [float(w) for w in last_weights_per_set[0]]  # берем веса последней записи
-        suggested_weights = [math.ceil(w * 1.05) for w in last_weights]
-        msg_text += "\n💡 Рекомендуемый вес для следующей тренировки по подходам:\n"
+        last_weights = last_weights_per_set[-1]
+        suggested_weights = [int(round(w * 1.05 + 0.49)//1) for w in last_weights]  # +5% и округление
+        recommendation = "💡 Рекомендуемый вес для следующей тренировки по подходам:\n"
         for i, w in enumerate(suggested_weights, 1):
-            msg_text += f"Подход {i}: {w} кг\n"
+            recommendation += f"Подход {i}: {w} кг\n"
 
-    await message.answer(msg_text, reply_markup=main_kb())
+    # ===== Построение графика =====
+    fig, ax = plt.subplots(figsize=(8, 4), constrained_layout=True)
+    ax.plot(dates[::-1], avg_weights[::-1], color="orange", marker="o", label="Средний вес (кг)")
+    ax.set_xlabel("Дата")
+    ax.set_ylabel("Вес (кг)", color="orange")
+    ax.tick_params(axis='y', labelcolor="orange")
+    plt.xticks(rotation=45, ha='right')
+    ax.set_title(f"Прогресс: {text}")
+    ax.legend(loc="upper left")
+
+    filename = f"progress_{user_id}_{text}.png"
+    plt.savefig(filename, format='png', dpi=120)
+    plt.close(fig)
+
+    # ===== Отправка пользователю =====
+    try:
+        await message.answer_photo(
+            FSInputFile(filename),
+            caption=report_text + recommendation,
+            reply_markup=main_kb()
+        )
+    except Exception as e:
+        await message.answer(f"Не удалось отправить график: {e}")
+
+    if os.path.exists(filename):
+        os.remove(filename)
+
     await state.clear()
 
 
