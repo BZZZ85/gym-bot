@@ -846,12 +846,12 @@ class ShowProgressStates(StatesGroup):
 
 @dp.message(ShowProgressStates.waiting_for_exercise)
 async def show_selected_progress(message: types.Message, state: FSMContext):
-text = message.text.strip()
-if text == "↩ В меню":
-await start(message, state)
-return
+    text = message.text.strip()
+    if text == "↩ В меню":
+        await start(message, state)
+        return
 
-```
+
 user_id = message.from_user.id
 records = await get_user_records(user_id)
 if not records:
