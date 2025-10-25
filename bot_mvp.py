@@ -846,97 +846,92 @@ class ShowProgressStates(StatesGroup):
 
 @dp.message(ShowProgressStates.waiting_for_exercise)
 async def show_selected_progress(message: types.Message, state: FSMContext):
-    text = message.text.strip()
-    if text == "↩ В меню":
-        await start(message, state)
-        return
+text = message.text.strip()
+if text == "↩ В меню":
+await start(message, state)
+return
 
-    user_id = message.from_user.id
-
-    # ===== Получаем все записи пользователя =====
-    exercises_dict = await get_last_10_per_exercise(user_id)
-    records = []
-    for exercise_name, recs in exercises_dict.items():
-        for r in recs:
-            r_dict = dict(r)  # Преобразуем asyncpg.Record в словарь
-            r_dict['exercise'] = exercise_name
-            records.append(r_dict)
-
-
-    if not records:
-        await message.answer("У вас пока нет записей.", reply_markup=main_kb())
-        await state.clear()
-        return
-
-    # ===== Фильтруем записи по выбранному упражнению =====
-    selected_records = [r for r in records if r['exercise'] == text]
-    if not selected_records:
-        await message.answer("Нет записей по выбранному упражнению.", reply_markup=main_kb())
-        await state.clear()
-        return
-
-    # ===== Подготовка текста отчёта =====
-    report_text = f"🏋️ Прогресс: {text}\n\n"
-    last_weights_per_set = []
-    dates, avg_weights = [], []
-
-    for r in selected_records:
-        date_str = r['date'].strftime('%d-%m-%Y')
-        dates.append(date_str)
-
-        reps = [int(x) for x in r['reps'].split()] if r['reps'] else []
-        weights = [float(x) for x in r['weight'].split()] if r.get('weight') else [0]*r['sets']
-        while len(weights) < len(reps):
-            weights.append(weights[-1] if weights else 0)
-
-        avg_weight = round(sum(weights)/len(weights), 1) if weights else 0
-        avg_weights.append(avg_weight)
-        last_weights_per_set.append(weights)
-
-        reps_str = "-".join(map(str, reps)) if reps else "0"
-        weights_str = "-".join(map(str, weights)) if weights else "0"
-        report_text += f"{date_str} — всего подходов: {r['sets']}\n"
-        for i, (rep, w) in enumerate(zip(reps, weights), 1):
-            report_text += f"  {i}️⃣ {rep} повторений | {w} кг\n"
-        report_text += "-"*20 + "\n"
-
-    # ===== Рекомендации по весу =====
-    recommendation = ""
-    if last_weights_per_set:
-        last_weights = last_weights_per_set[-1]
-        suggested_weights = [int(round(w * 1.05 + 0.49)) for w in last_weights]  # +5% с округлением вверх
-        recommendation = "💡 Рекомендуемый вес для следующей тренировки по подходам:\n"
-        for i, w in enumerate(suggested_weights, 1):
-            recommendation += f"Подход {i}: {w} кг\n"
-
-    # ===== Построение графика =====
-    fig, ax = plt.subplots(figsize=(8, 4), constrained_layout=True)
-    ax.plot(dates, avg_weights, color="orange", marker="o", label="Средний вес (кг)")
-    ax.set_xlabel("Дата")
-    ax.set_ylabel("Вес (кг)", color="orange")
-    ax.tick_params(axis='y', labelcolor="orange")
-    plt.xticks(rotation=45, ha='right')
-    ax.set_title(f"Прогресс: {text}")
-    ax.legend(loc="upper left")
-
-    filename = f"progress_{user_id}_{text}.png"
-    plt.savefig(filename, format='png', dpi=120)
-    plt.close(fig)
-
-    # ===== Отправка пользователю =====
-    try:
-        await message.answer_photo(
-            FSInputFile(filename),
-            caption=report_text + recommendation,
-            reply_markup=main_kb()
-        )
-    except Exception as e:
-        await message.answer(f"Не удалось отправить график: {e}")
-
-    if os.path.exists(filename):
-        os.remove(filename)
-
+```
+user_id = message.from_user.id
+records = await get_user_records(user_id)
+if not records:
+    await message.answer("У вас пока нет записей.", reply_markup=main_kb())
     await state.clear()
+    return
+
+# Фильтруем записи по упражнению
+selected_records = [r for r in records if r["exercise"] == text]
+if not selected_records:
+    await message.answer("Нет записей по выбранному упражнению.", reply_markup=main_kb())
+    await state.clear()
+    return
+
+# === Группируем по дате ===
+grouped = {}
+for r in selected_records:
+    date_key = r["date"].strftime("%d-%m-%Y")
+    reps = [int(x) for x in r["reps"].split()] if r["reps"] else []
+    weights = [float(x) for x in r["weight"].split()] if r.get("weight") else [0]
+    if date_key not in grouped:
+        grouped[date_key] = {"reps": [], "weights": []}
+    grouped[date_key]["reps"].extend(reps)
+    grouped[date_key]["weights"].extend(weights)
+
+# === Формируем текст отчёта ===
+report_text = f"🏋️ Прогресс: {text}\n\n"
+dates, avg_weights = [], []
+last_weights = []
+
+for date_key, data in sorted(grouped.items(), reverse=True)[:10]:
+    reps = data["reps"]
+    weights = data["weights"]
+    sets = len(reps)
+    avg_weight = round(sum(weights) / len(weights), 1) if weights else 0
+    dates.append(date_key)
+    avg_weights.append(avg_weight)
+    last_weights = weights  # запоминаем последние веса
+
+    report_text += f"{date_key} — всего подходов: {sets}\n"
+    for i, (rep, w) in enumerate(zip(reps, weights), 1):
+        report_text += f"  {i}️⃣ {rep} повторений | {w} кг\n"
+    report_text += "-" * 20 + "\n"
+
+# === Рекомендации по следующей тренировке ===
+recommendation = ""
+if last_weights:
+    suggested = [round(w * 1.05 + 0.49) // 1 for w in last_weights]
+    recommendation = "💡 Рекомендуемый вес для следующей тренировки по подходам:\n"
+    for i, w in enumerate(suggested, 1):
+        recommendation += f"Подход {i}: {w} кг\n"
+
+# === График ===
+fig, ax = plt.subplots(figsize=(8, 4), constrained_layout=True)
+ax.plot(dates[::-1], avg_weights[::-1], color="orange", marker="o", label="Средний вес (кг)")
+ax.set_xlabel("Дата")
+ax.set_ylabel("Вес (кг)", color="orange")
+plt.xticks(rotation=45, ha="right")
+ax.set_title(f"Прогресс: {text}")
+ax.legend(loc="upper left")
+
+filename = f"progress_{user_id}_{text}.png"
+plt.savefig(filename, format="png", dpi=120)
+plt.close(fig)
+
+# === Отправка пользователю ===
+try:
+    await message.answer_photo(
+        FSInputFile(filename),
+        caption=report_text + recommendation,
+        reply_markup=main_kb()
+    )
+except Exception as e:
+    await message.answer(f"Ошибка при отправке графика: {e}")
+
+if os.path.exists(filename):
+    os.remove(filename)
+
+await state.clear()
+
 
 
 
