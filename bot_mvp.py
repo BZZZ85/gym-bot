@@ -226,14 +226,18 @@ def parse_exercise_input(text: str):
     return exercise_text, approach, reps, weight
 
 
+# --- вот отдельная асинхронная функция, где можно использовать await ---
+@dp.message(lambda m: m.text.startswith("Добавить:"))
+async def handle_new_exercise(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    text = message.text.replace("Добавить:", "").strip()
 
-
-    # добавляем новое упражнение в exercises (список упражнений)
     await add_exercise(user_id, text)
 
     await state.update_data(exercise=text)
     await message.answer(f"✅ Упражнение '{text}' добавлено!")
     await ask_for_sets(message, state)
+
 
 # ===== Главное меню =====
 
