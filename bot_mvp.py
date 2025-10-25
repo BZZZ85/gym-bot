@@ -264,7 +264,7 @@ def main_kb():
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📜 История"), KeyboardButton(text="📈 Прогресс"), KeyboardButton(text="📊 Статистика")],
-            [KeyboardButton(text="➕ Добавить подход"), KeyboardButton(text="🗑 Удалить упражнение")],
+            [KeyboardButton(text="➕ Добавить подход"), [KeyboardButton(text="📋 Проверить БД")],KeyboardButton(text="🗑 Удалить упражнение")],
             [KeyboardButton(text="⏰ Напоминания"), KeyboardButton(text="🔄 Рестарт бота")]
               # новая кнопка для дневника питания
         ],
