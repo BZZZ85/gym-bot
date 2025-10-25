@@ -852,7 +852,14 @@ async def show_selected_progress(message: types.Message, state: FSMContext):
         return
 
     user_id = message.from_user.id
-    records = await get_user_records(user_id)
+
+    # 🔹 Замена вот этой строки:
+    # records = await get_user_records(user_id)
+    all_records = await get_last_10_per_exercise(user_id)
+    records = []
+    for exercise, recs in all_records.items():
+        records.extend(recs)
+
     if not records:
         await message.answer("У вас пока нет записей.", reply_markup=main_kb())
         await state.clear()
@@ -930,6 +937,7 @@ async def show_selected_progress(message: types.Message, state: FSMContext):
         os.remove(filename)
 
     await state.clear()
+
 
 
 
