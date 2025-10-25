@@ -335,22 +335,26 @@ async def save_record(user_id, exercise, reps_list, weights_list=None):
             )
 
 
-async def get_user_records(user_id):
-    global db_pool
+async def get_last_10_per_exercise(user_id):
+    """
+    Возвращает словарь: ключ — упражнение, значение — список последних 10 записей.
+    """
     async with db_pool.acquire() as conn:
-        rows = await conn.fetch(
-            "SELECT exercise, sets, reps, weight, date FROM records WHERE user_id=$1 ORDER BY date DESC LIMIT 10",
-            user_id
-        )
-        return rows
-        # Клавиатура с одной кнопкой
-food_keyboard = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="🍽 Что ел")]
-    ],
-    resize_keyboard=True,
-    one_time_keyboard=True
-)
+        rows = await conn.fetch("""
+            SELECT exercise, sets, reps, weight, date
+            FROM records
+            WHERE user_id=$1
+            ORDER BY date DESC
+        """, user_id)
+
+    exercises_dict = defaultdict(list)
+    for r in rows:
+        ex = r['exercise']
+        if len(exercises_dict[ex]) < 10:
+            exercises_dict[ex].append(r)
+
+    return exercises_dict
+
 
 # Доступные блины
 AVAILABLE_WEIGHTS = [20, 15, 10, 5, 2.5, 1.25]
@@ -761,27 +765,35 @@ async def show_history(message: types.Message, state: FSMContext):
         return
 
     user_id = message.from_user.id
-    records = await get_user_records(user_id)
-    selected_records = [r for r in records if r['exercise'] == text]
+    exercises_dict = await get_last_10_per_exercise(user_id)
+    selected_records = exercises_dict.get(text, [])
 
     if not selected_records:
         await message.answer("Нет записей по выбранному упражнению.", reply_markup=main_kb())
         await state.clear()
         return
 
-    msg_text = f"📊 История: {text}\n\n"
+    msg_text = f"📊 Последние 10 тренировок: {text}\n\n"
     for r in selected_records:
-        reps_list = r['reps'].split()
+        reps_list = r['reps'].split() if r['reps'] else ['0'] * r['sets']
         weights_list = r['weight'].split() if r.get('weight') else ['0'] * r['sets']
+
+        # Убедимся, что длина списков равна количеству подходов
+        while len(reps_list) < r['sets']:
+            reps_list.append(reps_list[-1])
+        while len(weights_list) < r['sets']:
+            weights_list.append(weights_list[-1])
+
         msg_text += f"{r['date'].strftime('%d-%m-%Y')} — подходы: {r['sets']}\n"
         for i in range(r['sets']):
-            rep = reps_list[i] if i < len(reps_list) else reps_list[-1]
-            w = weights_list[i] if i < len(weights_list) else weights_list[-1]
+            rep = reps_list[i]
+            w = weights_list[i]
             msg_text += f"{i+1}️⃣ {rep} повторений | {w} кг\n"
         msg_text += "-"*20 + "\n"
 
     await message.answer(msg_text, reply_markup=main_kb())
     await state.clear()
+
 
 # ===== Обработчик кнопки 📈 Прогресс =====
 
