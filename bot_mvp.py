@@ -852,67 +852,64 @@ async def show_selected_progress(message: types.Message, state: FSMContext):
         return
 
     user_id = message.from_user.id
-    records = await get_user_records(user_id)
+
+    # ===== Получаем все записи пользователя =====
+    exercises_dict = await get_last_10_per_exercise(user_id)
+    records = []
+    for exercise_name, recs in exercises_dict.items():
+        for r in recs:
+            r['exercise'] = exercise_name
+            records.append(r)
+
     if not records:
         await message.answer("У вас пока нет записей.", reply_markup=main_kb())
         await state.clear()
         return
 
-    # Фильтруем записи по выбранному упражнению
+    # ===== Фильтруем записи по выбранному упражнению =====
     selected_records = [r for r in records if r['exercise'] == text]
     if not selected_records:
         await message.answer("Нет записей по выбранному упражнению.", reply_markup=main_kb())
         await state.clear()
         return
 
-    # ===== Подготовка текста прогресса =====
-    records_by_date = defaultdict(list)
-    for r in selected_records:
-        records_by_date[r['date'].strftime('%d-%m-%Y')].append(r)
-
+    # ===== Подготовка текста отчёта =====
     report_text = f"🏋️ Прогресс: {text}\n\n"
     last_weights_per_set = []
     dates, avg_weights = [], []
 
-    for date, records_on_date in sorted(records_by_date.items(), reverse=True):
-        total_sets = sum(r['sets'] for r in records_on_date)
-        report_text += f"{date} — всего подходов: {total_sets}\n"
-        counter = 1
-        daily_weights = []
+    for r in selected_records:
+        date_str = r['date'].strftime('%d-%m-%Y')
+        dates.append(date_str)
 
-        for r in records_on_date:
-            reps_list = [int(x) for x in r['reps'].split()] if r['reps'] else []
-            weights_list = [float(x) for x in r['weight'].split()] if r.get('weight') else [0]*r['sets']
-            while len(weights_list) < len(reps_list):
-                weights_list.append(weights_list[-1] if weights_list else 0)
+        reps = [int(x) for x in r['reps'].split()] if r['reps'] else []
+        weights = [float(x) for x in r['weight'].split()] if r.get('weight') else [0]*r['sets']
+        while len(weights) < len(reps):
+            weights.append(weights[-1] if weights else 0)
 
-            last_weights_per_set.append(weights_list)
-            daily_weights.extend(weights_list)
+        avg_weight = round(sum(weights)/len(weights), 1) if weights else 0
+        avg_weights.append(avg_weight)
+        last_weights_per_set.append(weights)
 
-            for i in range(r['sets']):
-                rep = reps_list[i] if i < len(reps_list) else reps_list[-1]
-                w = weights_list[i] if i < len(weights_list) else weights_list[-1]
-                report_text += f"  {counter}️⃣ {rep} повторений | {w} кг\n"
-                counter += 1
-
+        reps_str = "-".join(map(str, reps)) if reps else "0"
+        weights_str = "-".join(map(str, weights)) if weights else "0"
+        report_text += f"{date_str} — всего подходов: {r['sets']}\n"
+        for i, (rep, w) in enumerate(zip(reps, weights), 1):
+            report_text += f"  {i}️⃣ {rep} повторений | {w} кг\n"
         report_text += "-"*20 + "\n"
 
-        # Для графика — средний вес за день
-        avg_weights.append(round(sum(daily_weights)/len(daily_weights), 1) if daily_weights else 0)
-        dates.append(date)
-
-    # ===== Рекомендации по следующей тренировке =====
+    # ===== Рекомендации по весу =====
     recommendation = ""
     if last_weights_per_set:
         last_weights = last_weights_per_set[-1]
-        suggested_weights = [int(round(w * 1.05 + 0.49)//1) for w in last_weights]  # +5% и округление
+        suggested_weights = [int(round(w * 1.05 + 0.49)) for w in last_weights]  # +5% с округлением вверх
         recommendation = "💡 Рекомендуемый вес для следующей тренировки по подходам:\n"
         for i, w in enumerate(suggested_weights, 1):
             recommendation += f"Подход {i}: {w} кг\n"
 
     # ===== Построение графика =====
     fig, ax = plt.subplots(figsize=(8, 4), constrained_layout=True)
-    ax.plot(dates[::-1], avg_weights[::-1], color="orange", marker="o", label="Средний вес (кг)")
+    ax.plot(dates, avg_weights, color="orange", marker="o", label="Средний вес (кг)")
     ax.set_xlabel("Дата")
     ax.set_ylabel("Вес (кг)", color="orange")
     ax.tick_params(axis='y', labelcolor="orange")
@@ -938,6 +935,7 @@ async def show_selected_progress(message: types.Message, state: FSMContext):
         os.remove(filename)
 
     await state.clear()
+
 
 
 @dp.message(lambda m: m.text == "⏰ Напоминания")
