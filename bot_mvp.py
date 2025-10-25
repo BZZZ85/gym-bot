@@ -858,8 +858,10 @@ async def show_selected_progress(message: types.Message, state: FSMContext):
     records = []
     for exercise_name, recs in exercises_dict.items():
         for r in recs:
-            r['exercise'] = exercise_name
-            records.append(r)
+            r_dict = dict(r)  # Преобразуем asyncpg.Record в словарь
+            r_dict['exercise'] = exercise_name
+            records.append(r_dict)
+
 
     if not records:
         await message.answer("У вас пока нет записей.", reply_markup=main_kb())
