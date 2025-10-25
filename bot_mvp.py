@@ -195,7 +195,6 @@ async def progress_button_handler(message: Message, state: FSMContext):
             WHERE user_id = $1
               AND exercise IS NOT NULL
               AND exercise != ''
-              AND record_type = 'training'
         """, user_id)
         exercises = [r["exercise"] for r in rows]
 
@@ -204,6 +203,7 @@ async def progress_button_handler(message: Message, state: FSMContext):
         return
 
     await show_progress_menu(message, exercises, state)
+
 
 
 
