@@ -852,78 +852,40 @@ async def show_selected_progress(message: types.Message, state: FSMContext):
         return
 
     user_id = message.from_user.id
-    records = await get_user_records(user_id)
-    if not records:
-        await message.answer("У вас пока нет записей.", reply_markup=main_kb())
-        await state.clear()
-        return
+    # Получаем все записи для выбранного упражнения
+    records = await db_pool.fetch(
+        "SELECT * FROM records WHERE user_id=$1 AND exercise=$2 ORDER BY date DESC LIMIT 10",
+        user_id, text
+    )
 
-    # Фильтруем записи по выбранному упражнению
-    selected_records = [r for r in records if r['exercise'] == text]
-    if not selected_records:
+    if not records:
         await message.answer("Нет записей по выбранному упражнению.", reply_markup=main_kb())
         await state.clear()
         return
 
-    # ===== Подготовка данных =====
-    dates, avg_weights = [], []
-    report_text = f"🏋️ Прогресс: {text}\n\n"
+    msg_text = f"📊 Последние 10 тренировок: {text}\n\n"
     last_weights_per_set = []
 
-    for r in selected_records:
-        date_str = r['date'].strftime('%d-%m-%Y')
-        dates.append(date_str)
+    for r in records:
+        reps_list = r['reps'].split() if r['reps'] else []
+        weights_list = r['weight'].split() if r['weight'] else ['0'] * r['sets']
+        msg_text += f"{r['date'].strftime('%d-%m-%Y')} — всего подходов: {r['sets']}\n"
+        for i in range(r['sets']):
+            rep = reps_list[i] if i < len(reps_list) else reps_list[-1]
+            w = weights_list[i] if i < len(weights_list) else weights_list[-1]
+            msg_text += f"  {i+1}️⃣ {rep} повторений | {w} кг\n"
+        msg_text += "-"*20 + "\n"
+        last_weights_per_set.append(weights_list)
 
-        reps = [int(x) for x in r['reps'].split()] if r['reps'] else []
-        weights = [float(x) for x in r['weight'].split()] if r.get('weight') else [0]*r['sets']
-
-        while len(weights) < len(reps):
-            weights.append(weights[-1] if weights else 0)
-
-        avg_weight = round(sum(weights)/len(weights), 1) if weights else 0
-        avg_weights.append(avg_weight)
-        last_weights_per_set.append(weights)
-
-        reps_str = "-".join(map(str, reps)) if reps else "0"
-        weights_str = "-".join(map(str, weights)) if weights else "0"
-        report_text += f"{date_str} — подходы: {r['sets']} | повторений: {reps_str} | вес(кг): {weights_str}\n"
-
-    # ===== Рекомендации по каждому подходу =====
-    recommendation = ""
+    # Рекомендация для следующей тренировки
     if last_weights_per_set:
-        last_weights = last_weights_per_set[-1]
-        suggested_weights = [round(w * 1.05 + 0.49)//1 for w in last_weights]  # +5% и округление вверх
-        recommendation = "💡 Рекомендуемый вес для следующей тренировки по подходам:\n"
+        last_weights = [float(w) for w in last_weights_per_set[0]]  # берем веса последней записи
+        suggested_weights = [math.ceil(w * 1.05) for w in last_weights]
+        msg_text += "\n💡 Рекомендуемый вес для следующей тренировки по подходам:\n"
         for i, w in enumerate(suggested_weights, 1):
-            recommendation += f"Подход {i}: {w} кг\n"
+            msg_text += f"Подход {i}: {w} кг\n"
 
-    # ===== Построение графика =====
-    fig, ax = plt.subplots(figsize=(8, 4), constrained_layout=True)
-    ax.plot(dates, avg_weights, color="orange", marker="o", label="Средний вес (кг)")
-    ax.set_xlabel("Дата")
-    ax.set_ylabel("Вес (кг)", color="orange")
-    ax.tick_params(axis='y', labelcolor="orange")
-    plt.xticks(rotation=45, ha='right')
-    ax.set_title(f"Прогресс: {text}")
-    ax.legend(loc="upper left")
-
-    filename = f"progress_{user_id}_{text}.png"
-    plt.savefig(filename, format='png', dpi=120)
-    plt.close(fig)
-
-    # ===== Отправка пользователю =====
-    try:
-        await message.answer_photo(
-            FSInputFile(filename),
-            caption=report_text + recommendation,
-            reply_markup=main_kb()
-        )
-    except Exception as e:
-        await message.answer(f"Не удалось отправить график: {e}")
-
-    if os.path.exists(filename):
-        os.remove(filename)
-
+    await message.answer(msg_text, reply_markup=main_kb())
     await state.clear()
 
 
