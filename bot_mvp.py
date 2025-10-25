@@ -74,13 +74,33 @@ class FoodStates(StatesGroup):
 
 @dp.message(lambda m: m.text == "📋 Проверить БД")
 async def check_db(message: types.Message):
+    user_id = message.from_user.id
     async with db_pool.acquire() as conn:
-        rows = await conn.fetch("SELECT * FROM records WHERE user_id=$1", message.from_user.id)
+        rows = await conn.fetch("""
+            SELECT id, exercise, reps, weight, date
+            FROM records
+            WHERE user_id = $1 AND record_type = 'training'
+            ORDER BY date DESC
+        """, user_id)
+
     if not rows:
-        await message.answer("❌ В базе нет записей")
-    else:
-        text = "\n".join([f"{r['exercise']} — {r['reps']} повторений, {r['weight']} кг" for r in rows])
-        await message.answer(f"✅ Найдено {len(rows)} записей:\n\n{text}")
+        await message.answer("❌ В базе нет тренировок.")
+        return
+
+    # Формируем текст
+    text = "\n".join(
+        [f"{r['id']}. {r['exercise']} | Повт: {r['reps']} | Вес: {r['weight']} | {r['date'].strftime('%Y-%m-%d %H:%M')}"
+         for r in rows]
+    )
+
+    # Telegram ограничивает сообщение 4096 символами, делим по кускам
+    MAX_LEN = 4000
+    for i in range(0, len(text), MAX_LEN):
+        chunk = text[i:i + MAX_LEN]
+        await message.answer(chunk)
+
+    await message.answer(f"✅ Всего найдено {len(rows)} записей.")
+
 
 
 # ===== Подключение к БД и инициализация таблиц =====
