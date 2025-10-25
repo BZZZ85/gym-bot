@@ -207,6 +207,7 @@ async def progress_button_handler(message: Message, state: FSMContext):
 
 
 
+
 def parse_exercise_input(text: str):
     """
     Пример ввода: "Жим лежа 3 10 12 15 60"
