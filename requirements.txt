@@ -4,4 +4,4 @@ aiofiles
 aiogram==3.4.1
 asyncpg
 python-dotenv
-pydantic==2.8.2
+
