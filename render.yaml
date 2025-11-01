@@ -3,8 +3,8 @@ services:
     name: telegram-bot
     build:
       env:
-        PYTHON_VERSION: 3.11.12  # стабильная версия для aiogram 3.3 + Pydantic 2.7
-      buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+        PYTHON_VERSION: 3.11.12
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
     startCommand: python bot_mvp.py
     autoDeploy: true
     envVars:
