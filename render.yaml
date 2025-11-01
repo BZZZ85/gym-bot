@@ -3,8 +3,16 @@ services:
     name: telegram-bot
     build:
       env:
-        PYTHON_VERSION: 3.11.18
-    buildCommand: pip install -r requirements.txt
+        PYTHON_VERSION: 3.12.7
+      buildCommand: |
+        # Обновляем pip и необходимые инструменты
+        pip install --upgrade pip setuptools wheel maturin
+
+        # Устанавливаем pydantic и pydantic-core только бинарными колёсами
+        pip install --only-binary :all: pydantic-core pydantic==2.8.2
+
+        # Устанавливаем остальные зависимости
+        pip install -r requirements.txt
     startCommand: python bot_mvp.py
     autoDeploy: true
     envVars:
