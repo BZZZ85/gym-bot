@@ -6,3 +6,4 @@ asyncpg
 python-dotenv
 pydantic==2.8.2
 aiohttp>=3.8.4,<4.0
+--only-binary :all: pydantic-core
