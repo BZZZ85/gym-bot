@@ -1120,13 +1120,7 @@ def adjust_weight_for_reps(previous_weight: float, previous_reps: int, new_reps:
 
     return new_weight
 
-async def test_add_exercise():
-    await create_pool()
-    result = await add_exercise(123456, "Bench Press")
-    exercises = await get_exercises(123456)
-    print(exercises)
 
-asyncio.run(test_add_exercise())
 
 
 
