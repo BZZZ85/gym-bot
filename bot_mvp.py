@@ -738,24 +738,30 @@ async def process_weight(message: types.Message, state: FSMContext):
 
 # ===== Обработчик кнопки "Удалить упражнение" =====
 # ===== Обработчик кнопки "Удалить упражнение" =====
-@dp.message(lambda m: m.text == "🗑 Удалить упражнение")
-async def choose_exercise_to_delete(message: types.Message, state: FSMContext):
+@dp.message(DeleteExerciseStates.waiting_for_exercise_to_delete)
+async def process_exercise_deletion(message: types.Message, state: FSMContext):
+    text = message.text.strip()
     user_id = message.from_user.id
-    exercises = await get_exercises(user_id)
 
-    # Фильтруем None или пустые значения
-    exercises = [ex for ex in exercises if ex and isinstance(ex, str)]
-
-    if not exercises:
-        await message.answer("У вас пока нет упражнений для удаления.", reply_markup=main_kb())
+    if text == "↩ В меню":
+        await start(message, state)
         return
 
-    kb_buttons = [[KeyboardButton(text=ex)] for ex in exercises]
-    kb_buttons.append([KeyboardButton(text="↩ В меню")])
-    kb = ReplyKeyboardMarkup(keyboard=kb_buttons, resize_keyboard=True, one_time_keyboard=True)
+    exercises = await get_exercises(user_id)
+    if text not in exercises:
+        await message.answer("❗ Выберите упражнение из списка.")
+        return
 
-    await message.answer("Выберите упражнение для удаления:", reply_markup=kb)
-    await state.set_state(DeleteExerciseStates.waiting_for_exercise_to_delete)
+    # Удаляем все записи упражнения из records
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            "DELETE FROM records WHERE user_id=$1 AND exercise=$2",
+            user_id, text
+        )
+
+    await message.answer(f"✅ Упражнение '{text}' удалено.", reply_markup=main_kb())
+    await state.clear()
+
 
 
 # ===== Обработка выбора упражнения для удаления =====
