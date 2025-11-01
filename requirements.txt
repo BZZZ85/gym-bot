@@ -2,8 +2,7 @@ matplotlib
 pytz
 aiofiles
 aiogram==3.4.1
+aiohttp==3.9.5
 asyncpg
 python-dotenv
---only-binary :all: pydantic-core
 pydantic==2.8.2
-
