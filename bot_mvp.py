@@ -190,6 +190,44 @@ async def add_exercise_to_db(user_id, exercise_text, approach=1, reps="", weight
             " ".join(map(str, weights)) if weights else None
         )
 
+async def add_exercise(user_id: int, exercise: str) -> bool:
+    """
+    Добавляет новое упражнение в records как базовую запись.
+    Возвращает True, если добавлено, False если уже существует.
+    """
+    exercise = exercise.strip()
+    async with db_pool.acquire() as conn:
+        existing = await conn.fetchrow(
+            "SELECT 1 FROM records WHERE user_id=$1 AND exercise=$2",
+            user_id, exercise
+        )
+        if existing:
+            return False
+        # Создаём базовую запись с 1 подходом, 0 повторений и 0 весом
+        await conn.execute(
+            """
+            INSERT INTO records (user_id, exercise, sets, reps, weight, date)
+            VALUES ($1, $2, 1, '0', '0', NOW())
+            """,
+            user_id, exercise
+        )
+        return True
+@dp.message(AddApproachStates.waiting_for_new_exercise)
+async def process_new_exercise(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
+    exercise = message.text.strip()
+
+    added = await add_exercise(user_id, exercise)
+    if added:
+        await message.answer(f"✅ Упражнение '{exercise}' добавлено и готово к заполнению подходов.")
+    else:
+        await message.answer(f"⚠️ Упражнение '{exercise}' уже существует.")
+
+    # Обновляем список упражнений в меню
+    exercises = await get_exercises(user_id)
+    kb = exercises_kb(exercises)
+    await message.answer("Выберите упражнение:", reply_markup=kb)
+    await state.set_state(AddApproachStates.waiting_for_exercise)
 
 
 async def get_exercises(user_id):
