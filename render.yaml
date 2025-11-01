@@ -3,7 +3,8 @@ services:
     name: telegram-bot
     build:
       env:
-        PYTHON_VERSION: 3.11.16  # используем Python 3.11
+        PYTHON_VERSION: 3.11.16
+  # используем Python 3.11
       buildCommand: |
         pip install --upgrade pip setuptools wheel maturin
         pip install --only-binary :all: pydantic-core pydantic==2.8.2
