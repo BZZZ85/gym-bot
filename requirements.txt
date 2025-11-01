@@ -4,6 +4,6 @@ aiofiles
 aiogram==3.4.1
 asyncpg
 python-dotenv
-aiohttp==3.8.4
+aiohttp>=4.0.0,<5.0.0    # <- заменяем старую версию
 pydantic==2.8.2
 --only-binary :all: pydantic-core
