@@ -3,13 +3,12 @@ services:
     name: telegram-bot
     build:
       env:
-        PYTHON_VERSION: 3.12.7
+        PYTHON_VERSION: 3.11.9
     buildCommand: pip install -r requirements.txt
     startCommand: python bot_mvp.py
     autoDeploy: true
     envVars:
       - key: DATABASE_URL
-        value: postgresql://neondb_owner:npg_0eRPsTi9tJAj@ep-winter-snow-ab9o1qut-pooler.eu-west-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require
+        value: postgresql://neondb_owner:npg_0eRPsTi9tJAj@ep-winter-snow-ab9o1qut-pooler.eu-west-2.aws.neon.tech/neondb?sslmode=require
       - key: BOT_TOKEN
-        value: 8442431194:AAHqrL5Uv-boQHXf_68f6or3i1pZmJDMqy0
         sync: false
