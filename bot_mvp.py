@@ -49,7 +49,7 @@ if not DATABASE_URL:
 # Инициализация бота и диспетчера
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
-client = OpenAI(api_key=OPENAI_API_KEY)
+
 
 db_pool = None
 async def create_db_pool():
