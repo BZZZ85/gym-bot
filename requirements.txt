@@ -7,3 +7,4 @@ python-dotenv
 aiohttp>=3.8.5,<5.0.0
 pydantic==2.8.2
 --only-binary :all: pydantic-core
+openai==1.42.0
