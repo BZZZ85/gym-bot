@@ -40,7 +40,7 @@ print("DEBUG: available env keys:", sorted(k for k in os.environ.keys() if "BOT"
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN не найден. Проверь Variables в Railway или ton.env.")
 if not DATABASE_URL:
