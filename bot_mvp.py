@@ -1165,6 +1165,24 @@ def adjust_weight_for_reps(previous_weight: float, previous_reps: int, new_reps:
 
     return new_weight
 
+@dp.message()
+async def chat_handler(message: types.Message):
+    text = message.text
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",  # можно gpt-3.5-turbo
+            messages=[
+                {"role": "system", "content": "Ты дружелюбный Telegram-бот."},
+                {"role": "user", "content": text},
+            ],
+        )
+
+        answer = response.choices[0].message.content
+        await message.answer(answer)
+
+    except Exception as e:
+        await message.answer(f"⚠️ Ошибка: {e}")
 
 @dp.message(Command("ask"))
 async def ask_gpt(message: types.Message):
