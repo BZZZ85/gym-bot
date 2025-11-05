@@ -1166,32 +1166,28 @@ def adjust_weight_for_reps(previous_weight: float, previous_reps: int, new_reps:
     return new_weight
 
 
-@dp.message(Command("start"))
-async def start(message: types.Message):
-    await message.answer("Привет! Я ChatGPT 🤖. Напиши что-нибудь — и я отвечу!")
+@dp.message(Command("ask"))
+async def ask_gpt(message: types.Message):
+    user_message = message.text.replace("/ask", "").strip()
+    if not user_message:
+        await message.answer("💬 Напиши сообщение после команды /ask.")
+        return
 
-
-@dp.message()
-async def chat(message: types.Message):
-    user_text = message.text
-
-    await message.answer("Думаю... 💭")
+    await message.answer("🤖 Думаю...")
 
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "Ты дружелюбный Telegram-бот."},
-                {"role": "user", "content": user_text},
-            ]
+                {"role": "system", "content": "Ты умный Telegram-бот, помогаешь пользователю в фитнесе и питании."},
+                {"role": "user", "content": user_message},
+            ],
         )
-
         answer = response.choices[0].message.content
         await message.answer(answer)
 
     except Exception as e:
-        await message.answer(f"Ошибка: {e}")
-
+        await message.answer(f"⚠️ Ошибка при обращении к ChatGPT: {e}")
 
 async def main():
     await dp.start_polling(bot)
