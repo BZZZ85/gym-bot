@@ -24,7 +24,6 @@ import aiohttp
 from aiogram import Router, types
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from openai import OpenAI
 from dotenv import load_dotenv
 
 
@@ -40,7 +39,6 @@ print("DEBUG: available env keys:", sorted(k for k in os.environ.keys() if "BOT"
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN не найден. Проверь Variables в Railway или ton.env.")
 if not DATABASE_URL:
@@ -1164,51 +1162,6 @@ def adjust_weight_for_reps(previous_weight: float, previous_reps: int, new_reps:
     new_weight = math.ceil(new_weight)
 
     return new_weight
-
-@dp.message()
-async def chat_handler(message: types.Message):
-    text = message.text
-
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",  # можно gpt-3.5-turbo
-            messages=[
-                {"role": "system", "content": "Ты дружелюбный Telegram-бот."},
-                {"role": "user", "content": text},
-            ],
-        )
-
-        answer = response.choices[0].message.content
-        await message.answer(answer)
-
-    except Exception as e:
-        await message.answer(f"⚠️ Ошибка: {e}")
-
-@dp.message(Command("ask"))
-async def ask_gpt(message: types.Message):
-    user_message = message.text.replace("/ask", "").strip()
-    if not user_message:
-        await message.answer("💬 Напиши сообщение после команды /ask.")
-        return
-
-    await message.answer("🤖 Думаю...")
-
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "Ты умный Telegram-бот, помогаешь пользователю в фитнесе и питании."},
-                {"role": "user", "content": user_message},
-            ],
-        )
-        answer = response.choices[0].message.content
-        await message.answer(answer)
-
-    except Exception as e:
-        await message.answer(f"⚠️ Ошибка при обращении к ChatGPT: {e}")
-
-async def main():
-    await dp.start_polling(bot)
 
 
 
