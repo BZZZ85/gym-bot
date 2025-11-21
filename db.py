@@ -1,20 +1,20 @@
 import asyncpg
 
+# Подключение к Render PostgreSQL
 DB_URL = "postgresql://bot_database_k8c0_user:MC2rp7rpUnVdRi63LLld1t5HG9m8uOrR@dpg-d4g51l6mcj7s73crk300-a.oregon-postgres.render.com/bot_database_k8c0"
 
 pool = None
-
 
 async def create_pool():
     global pool
     if pool is None:
         pool = await asyncpg.create_pool(
             DB_URL,
-            ssl="require",
+            ssl="require",       # обязательно для Render
             min_size=1,
             max_size=10
         )
-        print("✅ Database pool created!")
+        print("🔌 Connected to Render PostgreSQL!")
 
 
 async def close_pool():
@@ -23,7 +23,7 @@ async def close_pool():
         await pool.close()
 
 
-# ===== Пользователи =====
+# ====================== USERS ======================
 async def add_user(user_id, username):
     async with pool.acquire() as conn:
         await conn.execute(
@@ -34,7 +34,7 @@ async def add_user(user_id, username):
         )
 
 
-# ===== Упражнения =====
+# ================== EXERCISES =======================
 async def get_exercises(user_id: int):
     async with pool.acquire() as conn:
         rows = await conn.fetch(
@@ -54,7 +54,7 @@ async def add_exercise(user_id: int, name: str):
         )
 
 
-# ===== Подходы (записи тренировок) =====
+# ================== RECORDS =========================
 async def add_record(user_id: int, exercise: str, approach: int, reps: str, weight: str, volume: str):
     async with pool.acquire() as conn:
         await conn.execute(
@@ -88,7 +88,7 @@ async def delete_user_exercise(user_id: int, exercise: str):
         )
 
 
-# ===== Напоминания =====
+# ================= REMINDERS ========================
 async def add_reminder(user_id: int, days: str, time: str):
     async with pool.acquire() as conn:
         await conn.execute(
