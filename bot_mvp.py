@@ -807,14 +807,14 @@ async def history_menu(message: types.Message, state: FSMContext):
     await message.answer("Выберите упражнение для просмотра истории:", reply_markup=kb)
     await state.set_state(HistoryStates.waiting_for_exercise)
 # ===== Обработка выбора упражнения для истории =====
-@dp.message(HistoryStates.waiting_for_exercise)
 async def show_history(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
     text = message.text.strip()
+
     if text == "↩ В меню":
         await start(message, state)
         return
 
-    user_id = message.from_user.id
     records = await db_pool.fetch(
         """
         SELECT * FROM records
@@ -830,16 +830,18 @@ async def show_history(message: types.Message, state: FSMContext):
         await state.clear()
         return
 
+    # Группировка записей по дате
     from collections import defaultdict
     grouped = defaultdict(list)
     for r in records:
         date_str = r['date'].strftime('%d-%m-%Y')
         grouped[date_str].append(r)
 
+    # Формируем текст отчёта
     msg_text = f"📊 Последние 10 тренировок: {text}\n\n"
 
     for date_str, day_records in grouped.items():
-        total_sets = sum(r['sets'] for r in day_records)
+        total_sets = sum(r['sets'] if r['sets'] is not None else 0 for r in day_records)
         msg_text += f"{date_str} — всего подходов: {total_sets}\n"
 
         set_counter = 1  # общий счётчик подходов за день
@@ -856,10 +858,11 @@ async def show_history(message: types.Message, state: FSMContext):
                 msg_text += f"  {set_counter}️⃣ {reps_list[i]} повторений | {weights_list[i]} кг\n"
                 set_counter += 1
 
-        msg_text += "-"*20 + "\n"
+        msg_text += "-" * 20 + "\n"
 
     await message.answer(msg_text, reply_markup=main_kb())
     await state.clear()
+
 
 
 
