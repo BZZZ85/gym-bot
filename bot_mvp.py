@@ -809,8 +809,8 @@ async def history_menu(message: types.Message, state: FSMContext):
 # ===== Обработка выбора упражнения для истории =====
 @dp.message(HistoryStates.waiting_for_exercise)
 async def show_history(message: types.Message, state: FSMContext):
-    text = message.text.strip()
     user_id = message.from_user.id
+    text = message.text.strip()
 
     if text == "↩ В меню":
         await start(message, state)
@@ -847,8 +847,13 @@ async def show_history(message: types.Message, state: FSMContext):
 
         set_counter = 1  # общий счётчик подходов за день
         for r in day_records:
-            reps_list = r['reps'].split() if r['reps'] else ['0'] * r['sets']
-            weights_list = r['weight'].split() if r.get('weight') else ['0'] * r['sets']
+            # Проверка на None в поле 'sets'
+            if r['sets'] is None:
+                reps_list = []
+                weights_list = []
+            else:
+                reps_list = r['reps'].split() if r['reps'] else ['0'] * r['sets']
+                weights_list = r['weight'].split() if r.get('weight') else ['0'] * r['sets']
 
             while len(reps_list) < r['sets']:
                 reps_list.append(reps_list[-1])
