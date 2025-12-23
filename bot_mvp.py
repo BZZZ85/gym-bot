@@ -835,7 +835,7 @@ async def show_history(message: types.Message, state: FSMContext):
     msg_text = f"📊 Последние 10 тренировок: {text}\n\n"
 
     for date_str, day_records in grouped.items():
-        # Суммируем 'sets', проверяя на None
+        # Добавлена проверка на None для 'sets'
         total_sets = sum(r['sets'] if r['sets'] is not None else 0 for r in day_records)
         msg_text += f"{date_str} — всего подходов: {total_sets}\n"
 
@@ -864,6 +864,7 @@ async def show_history(message: types.Message, state: FSMContext):
 
     await message.answer(msg_text, reply_markup=main_kb())
     await state.clear()
+
 
 
 
