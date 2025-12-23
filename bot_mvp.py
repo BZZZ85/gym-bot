@@ -802,12 +802,13 @@ async def history_menu(message: types.Message, state: FSMContext):
 # ===== Обработка выбора упражнения для истории =====
 @dp.message(HistoryStates.waiting_for_exercise)
 async def show_history(message: types.Message, state: FSMContext):
+    user_id = message.from_user.id
     text = message.text.strip()
+
     if text == "↩ В меню":
         await start(message, state)
         return
 
-    user_id = message.from_user.id
     records = await db_pool.fetch(
         """
         SELECT * FROM records
@@ -823,36 +824,47 @@ async def show_history(message: types.Message, state: FSMContext):
         await state.clear()
         return
 
+    # Группировка записей по дате
     from collections import defaultdict
     grouped = defaultdict(list)
     for r in records:
         date_str = r['date'].strftime('%d-%m-%Y')
         grouped[date_str].append(r)
 
+    # Формируем текст отчёта
     msg_text = f"📊 Последние 10 тренировок: {text}\n\n"
 
     for date_str, day_records in grouped.items():
-        total_sets = sum(r['sets'] for r in day_records)
+        # Суммируем 'sets', проверяя на None
+        total_sets = sum(r['sets'] if r['sets'] is not None else 0 for r in day_records)
         msg_text += f"{date_str} — всего подходов: {total_sets}\n"
 
         set_counter = 1  # общий счётчик подходов за день
         for r in day_records:
-            reps_list = r['reps'].split() if r['reps'] else ['0'] * r['sets']
-            weights_list = r['weight'].split() if r.get('weight') else ['0'] * r['sets']
+            # Проверка на None в поле 'sets' и обработка пустых данных
+            if r['sets'] is None:
+                reps_list = []
+                weights_list = []
+            else:
+                reps_list = r['reps'].split() if r['reps'] else ['0'] * r['sets']
+                weights_list = r['weight'].split() if r.get('weight') else ['0'] * r['sets']
 
+            # Заполняем недостающие значения в списках
             while len(reps_list) < r['sets']:
                 reps_list.append(reps_list[-1])
             while len(weights_list) < r['sets']:
                 weights_list.append(weights_list[-1])
 
+            # Формируем текст для каждого подхода
             for i in range(r['sets']):
                 msg_text += f"  {set_counter}️⃣ {reps_list[i]} повторений | {weights_list[i]} кг\n"
                 set_counter += 1
 
-        msg_text += "-"*20 + "\n"
+        msg_text += "-" * 20 + "\n"
 
     await message.answer(msg_text, reply_markup=main_kb())
     await state.clear()
+
 
 
 
