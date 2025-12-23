@@ -807,9 +807,10 @@ async def history_menu(message: types.Message, state: FSMContext):
     await message.answer("Выберите упражнение для просмотра истории:", reply_markup=kb)
     await state.set_state(HistoryStates.waiting_for_exercise)
 # ===== Обработка выбора упражнения для истории =====
+@dp.message(HistoryStates.waiting_for_exercise)
 async def show_history(message: types.Message, state: FSMContext):
-    user_id = message.from_user.id
     text = message.text.strip()
+    user_id = message.from_user.id
 
     if text == "↩ В меню":
         await start(message, state)
