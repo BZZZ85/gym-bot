@@ -363,6 +363,7 @@ async def save_record(user_id, exercise, reps_list, weights_list=None):
     while len(weights_list) < len(reps_list):
         weights_list.append(weights_list[-1])
 
+    # Теперь будем добавлять записи в правильном порядке
     async with db_pool.acquire() as conn:
         for reps, weight in zip(reps_list, weights_list):
             await conn.execute(
@@ -372,6 +373,7 @@ async def save_record(user_id, exercise, reps_list, weights_list=None):
                 """,
                 user_id, exercise, str(reps), str(weight)
             )
+
 
 
 async def get_last_10_per_exercise(user_id):
