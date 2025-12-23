@@ -179,17 +179,30 @@ async def add_exercise_to_db(user_id, exercise_text, approach=1, reps="", weight
     Добавляет новое упражнение как отдельную запись в таблицу records.
     weights: список весов для каждого подхода
     """
+    # Фильтруем подходы с 0 повторениями и 0 весом
+    valid_reps = [reps for reps in reps if reps > 0]
+    valid_weights = [weights for weights, reps in zip(weights, reps) if reps > 0]
+
+    # Проверка, если нет действительных повторений и веса
+    if not valid_reps or not valid_weights:
+        print(f"❌ Не добавлены записи, так как все повторения или веса равны нулю.")
+        return  # Если все повторения равны 0, ничего не сохраняем
+
+    # Сохраняем данные в базе данных
     async with db_pool.acquire() as conn:
-        await conn.execute(
-            """
-            INSERT INTO records (user_id, exercise, reps, weight, date)
-            VALUES ($1, $2, $3, $4, NOW())
-            """,
-            user_id,
-            exercise_text.strip(),
-            str(reps),
-            " ".join(map(str, weights)) if weights else None
-        )
+        for reps, weight in zip(valid_reps, valid_weights):
+            if reps == 0 and weight == 0:
+                print("❌ Пропускаем запись с нулевыми повторениями и весом.")
+                continue  # Пропускаем записи с нулевыми значениями
+
+            await conn.execute(
+                """
+                INSERT INTO records (user_id, exercise, sets, reps, weight, date)
+                VALUES ($1, $2, 1, $3, $4, NOW())
+                """,
+                user_id, exercise_text.strip(), str(reps), str(weight)
+            )
+            print(f"✅ Запись добавлена: упражнение={exercise_text}, повторений={reps}, вес={weight}")
 
 async def add_exercise(user_id: int, exercise: str) -> bool:
     """
