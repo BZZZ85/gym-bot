@@ -363,20 +363,15 @@ async def save_record(user_id, exercise, reps_list, weights_list=None):
     while len(weights_list) < len(reps_list):
         weights_list.append(weights_list[-1])
 
-    # Присваиваем правильный порядок подходов
-    approach_counter = 1
-
     async with db_pool.acquire() as conn:
         for reps, weight in zip(reps_list, weights_list):
             await conn.execute(
                 """
-                INSERT INTO records (user_id, exercise, approach, reps, weight, date)
-                VALUES ($1, $2, $3, $4, $5, NOW())
+                INSERT INTO records (user_id, exercise, sets, reps, weight, date)
+                VALUES ($1, $2, 1, $3, $4, NOW())
                 """,
-                user_id, exercise, approach_counter, str(reps), str(weight)
+                user_id, exercise, str(reps), str(weight)
             )
-            approach_counter += 1  # Увеличиваем номер подхода
-
 
 
 async def get_last_10_per_exercise(user_id):
@@ -734,7 +729,6 @@ async def process_weight(message: types.Message, state: FSMContext):
     while len(weights_list) < sets:
         weights_list.append(weights_list[-1])
 
-    # Теперь добавляем запись в правильном порядке
     await save_record(message.from_user.id, exercise, reps_list, weights_list)
 
     await message.answer(
@@ -742,7 +736,6 @@ async def process_weight(message: types.Message, state: FSMContext):
         reply_markup=main_kb()
     )
     await state.clear()
-
 
 # ===== Обработчик кнопки "Удалить упражнение" =====
 # ===== Обработчик кнопки "Удалить упражнение" =====
@@ -809,13 +802,12 @@ async def history_menu(message: types.Message, state: FSMContext):
 # ===== Обработка выбора упражнения для истории =====
 @dp.message(HistoryStates.waiting_for_exercise)
 async def show_history(message: types.Message, state: FSMContext):
-    user_id = message.from_user.id
     text = message.text.strip()
-
     if text == "↩ В меню":
         await start(message, state)
         return
 
+    user_id = message.from_user.id
     records = await db_pool.fetch(
         """
         SELECT * FROM records
@@ -831,29 +823,22 @@ async def show_history(message: types.Message, state: FSMContext):
         await state.clear()
         return
 
-    # Группировка записей по дате
     from collections import defaultdict
     grouped = defaultdict(list)
     for r in records:
         date_str = r['date'].strftime('%d-%m-%Y')
         grouped[date_str].append(r)
 
-    # Формируем текст отчёта
     msg_text = f"📊 Последние 10 тренировок: {text}\n\n"
 
     for date_str, day_records in grouped.items():
-        total_sets = sum(r['sets'] if r['sets'] is not None else 0 for r in day_records)
+        total_sets = sum(r['sets'] for r in day_records)
         msg_text += f"{date_str} — всего подходов: {total_sets}\n"
 
         set_counter = 1  # общий счётчик подходов за день
         for r in day_records:
-            # Проверка на None в поле 'sets'
-            if r['sets'] is None:
-                reps_list = []
-                weights_list = []
-            else:
-                reps_list = r['reps'].split() if r['reps'] else ['0'] * r['sets']
-                weights_list = r['weight'].split() if r.get('weight') else ['0'] * r['sets']
+            reps_list = r['reps'].split() if r['reps'] else ['0'] * r['sets']
+            weights_list = r['weight'].split() if r.get('weight') else ['0'] * r['sets']
 
             while len(reps_list) < r['sets']:
                 reps_list.append(reps_list[-1])
@@ -864,11 +849,10 @@ async def show_history(message: types.Message, state: FSMContext):
                 msg_text += f"  {set_counter}️⃣ {reps_list[i]} повторений | {weights_list[i]} кг\n"
                 set_counter += 1
 
-        msg_text += "-" * 20 + "\n"
+        msg_text += "-"*20 + "\n"
 
     await message.answer(msg_text, reply_markup=main_kb())
     await state.clear()
-
 
 
 
