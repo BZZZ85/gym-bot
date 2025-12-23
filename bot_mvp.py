@@ -731,6 +731,7 @@ async def process_weight(message: types.Message, state: FSMContext):
     while len(weights_list) < sets:
         weights_list.append(weights_list[-1])
 
+    # Теперь добавляем запись в правильном порядке
     await save_record(message.from_user.id, exercise, reps_list, weights_list)
 
     await message.answer(
@@ -738,6 +739,7 @@ async def process_weight(message: types.Message, state: FSMContext):
         reply_markup=main_kb()
     )
     await state.clear()
+
 
 # ===== Обработчик кнопки "Удалить упражнение" =====
 # ===== Обработчик кнопки "Удалить упражнение" =====
