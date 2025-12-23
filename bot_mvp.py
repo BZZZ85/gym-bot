@@ -356,24 +356,33 @@ async def save_record(user_id, exercise, reps_list, weights_list=None):
     reps_list — список повторений для каждого подхода
     weights_list — список весов для каждого подхода (если None, ставим 0)
     """
+    # Если весов нет, создаём их с нулями для каждого подхода
     if weights_list is None:
         weights_list = [0] * len(reps_list)
 
-    # Фильтруем подходы с 0 повторениями, чтобы они не сохранялись
+    # Фильтруем подходы с 0 повторениями и 0 весом, чтобы они не сохранялись
     valid_reps = [reps for reps in reps_list if reps > 0]
     valid_weights = [weights for weights, reps in zip(weights_list, reps_list) if reps > 0]
 
-    # Если все повторения равны 0, то не добавляем этот подход
+    # Проверка, если нет действительных повторений
     if not valid_reps:
-        return  # Ничего не сохраняем, если все повторения равны 0
+        return  # Если все повторения равны 0, ничего не сохраняем
 
-    # Если весов меньше повторений, дублируем последний
+    # Заполняем недостающие веса, если их меньше, чем количество повторений
     while len(valid_weights) < len(valid_reps):
         valid_weights.append(valid_weights[-1] if valid_weights else 0)
 
-    # Теперь добавляем записи только с корректными значениями
+    # Логируем valid_reps и valid_weights, чтобы убедиться, что данные корректные
+    print(f"Valid reps: {valid_reps}")
+    print(f"Valid weights: {valid_weights}")
+
+    # Сохраняем данные в базе данных
     async with db_pool.acquire() as conn:
         for reps, weight in zip(valid_reps, valid_weights):
+            if reps == 0 and weight == 0:
+                continue  # Пропускаем записи с нулевыми значениями
+
+            # Добавляем запись только если повторения и вес > 0
             await conn.execute(
                 """
                 INSERT INTO records (user_id, exercise, sets, reps, weight, date)
