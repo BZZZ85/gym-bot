@@ -359,12 +359,21 @@ async def save_record(user_id, exercise, reps_list, weights_list=None):
     if weights_list is None:
         weights_list = [0] * len(reps_list)
 
-    # Если весов меньше подходов, дублируем последний
-    while len(weights_list) < len(reps_list):
-        weights_list.append(weights_list[-1])
+    # Фильтруем подходы с 0 повторениями, чтобы они не сохранялись
+    valid_reps = [reps for reps in reps_list if reps > 0]
+    valid_weights = [weights for weights, reps in zip(weights_list, reps_list) if reps > 0]
 
+    # Если все повторения равны 0, то не добавляем этот подход
+    if not valid_reps:
+        return  # Ничего не сохраняем, если все повторения равны 0
+
+    # Если весов меньше повторений, дублируем последний
+    while len(valid_weights) < len(valid_reps):
+        valid_weights.append(valid_weights[-1] if valid_weights else 0)
+
+    # Теперь добавляем записи только с корректными значениями
     async with db_pool.acquire() as conn:
-        for reps, weight in zip(reps_list, weights_list):
+        for reps, weight in zip(valid_reps, valid_weights):
             await conn.execute(
                 """
                 INSERT INTO records (user_id, exercise, sets, reps, weight, date)
@@ -372,6 +381,7 @@ async def save_record(user_id, exercise, reps_list, weights_list=None):
                 """,
                 user_id, exercise, str(reps), str(weight)
             )
+
 
 
 async def get_last_10_per_exercise(user_id):
