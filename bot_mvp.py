@@ -363,16 +363,19 @@ async def save_record(user_id, exercise, reps_list, weights_list=None):
     while len(weights_list) < len(reps_list):
         weights_list.append(weights_list[-1])
 
-    # Теперь будем добавлять записи в правильном порядке
+    # Присваиваем правильный порядок подходов
+    approach_counter = 1
+
     async with db_pool.acquire() as conn:
         for reps, weight in zip(reps_list, weights_list):
             await conn.execute(
                 """
-                INSERT INTO records (user_id, exercise, sets, reps, weight, date)
-                VALUES ($1, $2, 1, $3, $4, NOW())
+                INSERT INTO records (user_id, exercise, approach, reps, weight, date)
+                VALUES ($1, $2, $3, $4, $5, NOW())
                 """,
-                user_id, exercise, str(reps), str(weight)
+                user_id, exercise, approach_counter, str(reps), str(weight)
             )
+            approach_counter += 1  # Увеличиваем номер подхода
 
 
 
