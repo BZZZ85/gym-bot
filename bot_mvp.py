@@ -364,22 +364,30 @@ async def save_record(user_id, exercise, reps_list, weights_list=None):
     valid_reps = [reps for reps in reps_list if reps > 0]
     valid_weights = [weights for weights, reps in zip(weights_list, reps_list) if reps > 0]
 
+    # Логируем значения после фильтрации
+    print(f"Reps list: {reps_list}")
+    print(f"Weights list: {weights_list}")
+    print(f"Valid reps after filtering: {valid_reps}")
+    print(f"Valid weights after filtering: {valid_weights}")
+
     # Проверка, если нет действительных повторений
     if not valid_reps:
+        print("No valid reps, skipping this record.")
         return  # Если все повторения равны 0, ничего не сохраняем
 
     # Заполняем недостающие веса, если их меньше, чем количество повторений
     while len(valid_weights) < len(valid_reps):
         valid_weights.append(valid_weights[-1] if valid_weights else 0)
 
-    # Логируем valid_reps и valid_weights, чтобы убедиться, что данные корректные
-    print(f"Valid reps: {valid_reps}")
-    print(f"Valid weights: {valid_weights}")
+    # Логируем данные, которые будут добавлены в базу данных
+    print(f"Final valid reps to save: {valid_reps}")
+    print(f"Final valid weights to save: {valid_weights}")
 
     # Сохраняем данные в базе данных
     async with db_pool.acquire() as conn:
         for reps, weight in zip(valid_reps, valid_weights):
             if reps == 0 and weight == 0:
+                print("Skipping record with zero reps and weight.")
                 continue  # Пропускаем записи с нулевыми значениями
 
             # Добавляем запись только если повторения и вес > 0
@@ -390,6 +398,8 @@ async def save_record(user_id, exercise, reps_list, weights_list=None):
                 """,
                 user_id, exercise, str(reps), str(weight)
             )
+            print(f"Record added: exercise={exercise}, reps={reps}, weight={weight}")
+
 
 
 
