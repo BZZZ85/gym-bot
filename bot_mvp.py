@@ -1224,7 +1224,7 @@ def adjust_weight_for_reps(previous_weight: float, previous_reps: int, new_reps:
 
 # ===== Запуск =====
 async def main():
-    await create_db_pool()  # подключение к базе
+    await init_db()  # подключение к базе + создание таблиц, если их ещё нет
     asyncio.create_task(reminder_scheduler(bot))  # <-- передаём bot сюда
     await dp.start_polling(bot)
 
