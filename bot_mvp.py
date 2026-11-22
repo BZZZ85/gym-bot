@@ -6,6 +6,8 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
+from aiogram.types import WebAppInfo, MenuButtonWebApp
+from urllib.parse import urlparse
 import asyncpg
 from dotenv import load_dotenv
 from collections import defaultdict
@@ -32,6 +34,7 @@ from dotenv import load_dotenv
 # Загружаем локальный .env только если он есть
 if os.path.exists("ton.env"):
     load_dotenv("ton.env")
+load_dotenv(".env")
 
 # Получаем переменные окружения (Railway Variables или ton.env)
 print("DEBUG: available env keys:", sorted(k for k in os.environ.keys() if "BOT" in k or "TOKEN" in k))
@@ -39,6 +42,11 @@ print("DEBUG: available env keys:", sorted(k for k in os.environ.keys() if "BOT"
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
+WEBAPP_URL = os.getenv("WEBAPP_URL", "").strip()
+if WEBAPP_URL:
+    webapp_address = urlparse(WEBAPP_URL)
+    if webapp_address.scheme != "https" or not webapp_address.netloc:
+        raise ValueError("WEBAPP_URL должен быть публичным HTTPS-адресом приложения")
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN не найден. Проверь Variables в Railway или ton.env.")
 if not DATABASE_URL:
@@ -333,15 +341,15 @@ async def handle_new_exercise(message: types.Message, state: FSMContext):
 
 
 def main_kb():
-    return ReplyKeyboardMarkup(
-        keyboard=[
+    keyboard = [
             [KeyboardButton(text="📜 История"), KeyboardButton(text="📈 Прогресс"), KeyboardButton(text="📊 Статистика")],
             [KeyboardButton(text="➕ Добавить подход"), KeyboardButton(text="🗑 Удалить упражнение")],
             [KeyboardButton(text="⏰ Напоминания"), KeyboardButton(text="🔄 Рестарт бота")],
             [KeyboardButton(text="📋 Проверить БД")]
-        ],
-        resize_keyboard=True
-    )
+        ]
+    if WEBAPP_URL:
+        keyboard.insert(0, [KeyboardButton(text="🏋️ Открыть приложение", web_app=WebAppInfo(url=WEBAPP_URL))])
+    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
 
 
@@ -1225,6 +1233,10 @@ def adjust_weight_for_reps(previous_weight: float, previous_reps: int, new_reps:
 # ===== Запуск =====
 async def main():
     await init_db()  # подключение к базе + создание таблиц, если их ещё нет
+    if WEBAPP_URL:
+        await bot.set_chat_menu_button(menu_button=MenuButtonWebApp(
+            text="Тренировки", web_app=WebAppInfo(url=WEBAPP_URL)
+        ))
     asyncio.create_task(reminder_scheduler(bot))  # <-- передаём bot сюда
     await dp.start_polling(bot)
 
