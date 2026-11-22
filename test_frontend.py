@@ -34,16 +34,27 @@ class FrontendDeploymentTests(unittest.TestCase):
                 self.assertEqual(client.get("/").text, (ROOT / "static/index.html").read_text(encoding="utf-8"))
                 self.assertEqual(client.get("/app.js").status_code, 200)
 
-    def test_complete_static_folder_takes_priority(self):
+    def test_matching_static_folder_is_served_directly(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
             for name in ("index.html", "app.js", "styles.css"):
-                (directory / name).write_text("complete upload: " + name, encoding="utf-8")
+                (directory / name).write_text((ROOT / "static" / name).read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
             application = FastAPI()
             mount_frontend(application, directory)
             with TestClient(application) as client:
-                self.assertEqual(client.get("/").text, "complete upload: index.html")
-                self.assertEqual(client.get("/app.js").text, "complete upload: app.js")
+                self.assertEqual(client.get("/").text, (ROOT / "static/index.html").read_text(encoding="utf-8"))
+                self.assertEqual(client.head("/app.js").status_code, 200)
+
+    def test_old_complete_static_folder_cannot_override_current_design(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            for name in ("index.html", "app.js", "styles.css"):
+                (directory / name).write_text("old release: " + name, encoding="utf-8")
+            application = FastAPI()
+            mount_frontend(application, directory)
+            with TestClient(application) as client:
+                self.assertEqual(client.get("/").text, (ROOT / "static/index.html").read_text(encoding="utf-8"))
+                self.assertEqual(client.get("/styles.css").text, (ROOT / "static/styles.css").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
