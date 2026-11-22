@@ -1,2 +1,2 @@
--r requirements-webapp.txt
+-r requirements.txt
 httpx>=0.27,<0.29

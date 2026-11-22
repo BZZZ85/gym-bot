@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111418">
+  <title>GYM — твой дневник тренировок</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="https://telegram.org/js/telegram-web-app.js" defer></script>
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="i-gym" viewBox="0 0 24 24"><path d="m7 7 10 10M4 9l5-5M15 20l5-5M2 7l5-5M17 22l5-5M5 10l5-5M14 19l5-5"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 4v16h16M7 14l4-4 4 2 5-7"/></symbol>
+    <symbol id="i-history" viewBox="0 0 24 24"><path d="M4 8a9 9 0 1 1-1 7M3 3v6h6M12 7v5l3 2"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+  </svg>
+
+  <div class="app-shell">
+    <header class="app-header">
+      <button class="brand" id="home" type="button" aria-label="GYM — главная"><span class="brand-symbol"><svg><use href="#i-gym"/></svg></span>GYM<span class="brand-dot">.</span></button>
+      <div class="header-right"><span class="header-label">ТРЕНИРУЙСЯ. РАСТИ. ПОВТОРЯЙ.</span><span class="avatar" id="avatar" aria-hidden="true">G</span></div>
+    </header>
+
+    <div id="demo-banner" class="demo-banner" hidden>Деморежим · пример данных, изменения только в этом браузере</div>
+    <div id="notice" class="notice" role="alert" hidden><span id="notice-text"></span><button id="retry" class="text-button" type="button">Повторить</button></div>
+
+    <main id="main" aria-busy="true">
+      <section id="loading" class="welcome"><span class="loader"></span><h1>Готовим твой дневник</h1><p>Загружаем тренировки…</p></section>
+      <section id="welcome" class="welcome" hidden>
+        <span class="welcome-icon"><svg><use href="#i-gym"/></svg></span>
+        <p class="eyebrow">ТВОЙ ЛИЧНЫЙ ДНЕВНИК ТРЕНИРОВОК</p>
+        <h1>Сильнее.<br><span class="accent-text">В своём темпе.</span></h1>
+        <p>Тренировки, подходы и твои личные рекорды — в одном месте. Для своего дневника открой приложение внутри Telegram.</p>
+        <div class="welcome-features"><span><svg><use href="#i-gym"/></svg>Подходы</span><span><svg><use href="#i-clock"/></svg>Отдых</span><span><svg><use href="#i-chart"/></svg>Прогресс</span></div>
+        <button id="try-demo" class="primary" type="button">Посмотреть демо <svg><use href="#i-arrow"/></svg></button>
+      </section>
+
+      <div id="screens" hidden>
+        <section id="screen-today" class="screen" aria-labelledby="today-heading">
+          <div class="page-heading"><div><p class="eyebrow" id="today-date"></p><h1 id="today-heading">Твоя тренировка</h1></div><span class="live-pill"><span></span>В твоём темпе</span></div>
+          <div class="today-layout">
+            <div class="main-column">
+              <section class="hero-card">
+                <div class="hero-copy"><span class="tag"><span class="tag-dot"></span>СЕГОДНЯ — ТВОЙ ДЕНЬ</span><h2>Маленькие шаги.<br><span class="accent-text">Большой прогресс.</span></h2><p id="hero-description">Запиши первый подход.<br>И двигайся к своему следующему рекорду.</p><button class="primary" id="start-workout" type="button"><svg><use href="#i-plus"/></svg>Начать тренировку <svg><use href="#i-arrow"/></svg></button></div>
+                <div class="hero-art" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="weight-art"><div class="bar"></div><div class="plate plate-a"></div><div class="plate plate-b"></div><div class="plate plate-c"></div><div class="plate plate-d"></div></div><span class="art-caption">ONE MORE REP</span></div>
+              </section>
+              <div class="quick-actions" aria-label="Быстрый доступ"><button type="button" class="quick-card" data-quick-tab="history"><span class="quick-icon"><svg><use href="#i-history"/></svg></span><span><strong>История</strong><small>Каждая тренировка</small></span><svg class="row-arrow"><use href="#i-chevron"/></svg></button><button type="button" class="quick-card quick-progress" data-quick-tab="progress"><span class="quick-icon"><svg><use href="#i-chart"/></svg></span><span><strong>Прогресс</strong><small>Твои результаты</small></span><svg class="row-arrow"><use href="#i-chevron"/></svg></button></div>
+              <div class="section-heading"><h2>Твои упражнения <span id="exercise-count" class="count-badge">0</span></h2><button id="new-exercise" type="button" class="text-button"><svg><use href="#i-plus"/></svg>Добавить</button></div>
+              <div class="search-field"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg><label class="visually-hidden" for="exercise-search">Поиск упражнений</label><input type="search" id="exercise-search" placeholder="Найти упражнение" autocomplete="off"></div>
+              <div id="exercise-list" class="exercise-list"></div>
+            </div>
+            <aside class="side-column">
+              <section class="stats-card"><div class="card-heading"><h2>Твой ритм</h2><span class="small-tag">7 ДНЕЙ</span></div><div class="stat-main"><span id="week-count">0</span><span>тренировок<br>за неделю</span></div><div class="week-strip" id="week-strip" aria-label="Тренировки за последние семь дней"></div><div class="stat-footer"><span>Всего тренировок</span><strong id="total-count">0</strong></div></section>
+              <section class="timer-card" aria-label="Таймер отдыха"><div class="card-heading"><h2><svg><use href="#i-clock"/></svg>Время на отдых</h2><span class="small-tag">МЕЖДУ ПОДХОДАМИ</span></div><div class="timer-number" id="timer-display" role="timer">01:30</div><div class="timer-presets" aria-label="Длительность отдыха"><button type="button" data-seconds="60">60 с</button><button type="button" data-seconds="90" class="selected" aria-pressed="true">90 с</button><button type="button" data-seconds="120">120 с</button></div><div class="timer-actions"><button id="timer-toggle" type="button" class="secondary">Начать отдых</button><button id="timer-reset" type="button" class="icon-button" aria-label="Сбросить таймер"><svg><use href="#i-history"/></svg></button></div><p class="timer-note">Сохранение подходов запускает таймер.</p></section>
+              <section class="today-card"><span class="eyebrow">СЕГОДНЯ</span><div class="today-metrics"><div><strong id="today-sets">0</strong><span>подходов</span></div><div><strong id="today-volume">0</strong><span>объём, кг</span></div></div></section>
+            </aside>
+          </div>
+        </section>
+
+        <section id="screen-history" class="screen" aria-labelledby="history-heading" hidden>
+          <div class="page-heading"><div><p class="eyebrow">КАЖДЫЙ ПОДХОД НА СВОЁМ МЕСТЕ</p><h1 id="history-heading">История тренировок</h1></div><span class="live-pill">Последние 30 дней тренировок</span></div>
+          <div id="history-list" class="history-list"></div>
+        </section>
+
+        <section id="screen-progress" class="screen" aria-labelledby="progress-heading" hidden>
+          <div class="page-heading"><div><p class="eyebrow">СМОТРИ, КАК ДАЛЕКО ТЫ ПРОШЁЛ</p><h1 id="progress-heading">Твой прогресс</h1></div></div>
+          <label for="progress-exercise" class="field-label">Упражнение</label><select id="progress-exercise"></select>
+          <div id="progress-content" aria-live="polite"></div>
+        </section>
+      </div>
+    </main>
+    <footer class="app-footer">GYM. Каждый подход считается.<span>Даты по московскому времени</span></footer>
+  </div>
+
+  <div id="rest-dock" class="rest-dock" hidden><button id="open-rest" type="button"><span class="rest-icon"><svg><use href="#i-clock"/></svg></span><span><small>Отдых между подходами</small><strong id="rest-remaining">01:30</strong></span></button><button id="rest-pause" type="button">Пауза</button></div>
+  <nav id="navigation" class="bottom-nav" aria-label="Основная навигация" hidden><button type="button" data-tab="today" class="active" aria-current="page"><svg><use href="#i-gym"/></svg><span>Тренировка</span></button><button type="button" data-tab="history"><svg><use href="#i-history"/></svg><span>История</span></button><button type="button" data-tab="progress"><svg><use href="#i-chart"/></svg><span>Прогресс</span></button><button type="button" id="nav-record" class="nav-record" aria-label="Записать подходы"><svg><use href="#i-plus"/></svg><span>Записать</span></button></nav>
+
+  <dialog id="record-dialog" aria-labelledby="record-title">
+    <form id="record-form">
+      <div class="dialog-heading"><div><p class="eyebrow">КАЖДЫЙ ПОДХОД СЧИТАЕТСЯ</p><h2 id="record-title">Записать упражнение</h2></div><button type="button" id="close-dialog" class="icon-button" aria-label="Закрыть"><svg><use href="#i-close"/></svg></button></div>
+      <label class="field-label" for="exercise-name">Упражнение</label><input id="exercise-name" name="exercise" list="exercise-options" placeholder="Например, жим лёжа" maxlength="120" required autocomplete="off"><datalist id="exercise-options"></datalist>
+      <p id="last-entry" class="last-entry"></p>
+      <div class="sets-header"><span>Подход</span><span>Вес, кг</span><span>Повторения</span><span></span></div><div id="set-rows"></div>
+      <button id="add-set" class="add-set" type="button"><svg><use href="#i-plus"/></svg>Добавить подход</button>
+      <p id="form-error" class="form-error" role="alert" hidden></p>
+      <div class="save-summary"><span>Объём упражнения</span><strong id="form-volume">0 кг</strong></div>
+      <button id="save-record" class="primary save-button" type="submit"><svg><use href="#i-check"/></svg><span>Сохранить подходы</span></button>
+      <p class="form-note">Вес 0 кг — для упражнений с собственным весом.</p>
+    </form>
+  </dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>
