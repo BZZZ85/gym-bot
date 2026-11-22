@@ -1,286 +1,192 @@
-import hashlib
-import hmac
-import json
 import os
-import time
-from collections import defaultdict
-from datetime import date, timedelta
-from urllib.parse import parse_qsl
+from contextlib import asynccontextmanager
+from datetime import timedelta
+from pathlib import Path
+from uuid import UUID
 
 import asyncpg
-from fastapi import Depends, FastAPI, Header, HTTPException
+from dotenv import load_dotenv
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-DATABASE_URL = os.getenv("DATABASE_URL")
-INIT_DATA_MAX_AGE = 24 * 60 * 60  # секунд; за это время initData считается свежей
+from webapp.auth import InvalidInitData, validate_init_data
+from webapp.data import local_timestamp, normalize_records, sessions, today
 
-if not BOT_TOKEN:
-    raise RuntimeError("❌ BOT_TOKEN не найден. Задайте его в Variables сервиса webapp на Railway.")
-if not DATABASE_URL:
-    raise RuntimeError("❌ DATABASE_URL не найден. Задайте его в Variables сервиса webapp на Railway.")
-
-app = FastAPI(title="Gym Bot Mini App")
-
-pool: asyncpg.Pool | None = None
+ROOT = Path(__file__).resolve().parent
+load_dotenv(ROOT.parent / "ton.env")
+load_dotenv(ROOT.parent / ".env")
 
 
-@app.on_event("startup")
-async def startup() -> None:
-    global pool
-    pool = await asyncpg.create_pool(dsn=DATABASE_URL, min_size=1, max_size=5)
-    # На случай, если webapp запустят раньше, чем бот успеет создать таблицы
-    async with pool.acquire() as conn:
-        await conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS users (
-                user_id BIGINT PRIMARY KEY,
-                username TEXT
-            )
-            """
-        )
-        await conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS records (
-                user_id BIGINT REFERENCES users(user_id) ON DELETE CASCADE,
-                exercise TEXT,
-                sets INT,
-                reps TEXT,
-                weight TEXT,
-                date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
-
-
-@app.on_event("shutdown")
-async def shutdown() -> None:
-    if pool:
+@asynccontextmanager
+async def lifespan(app):
+    token, database = os.getenv("BOT_TOKEN"), os.getenv("DATABASE_URL")
+    if not token or not database:
+        raise RuntimeError("Задайте BOT_TOKEN и DATABASE_URL для веб-сервиса")
+    app.state.bot_token = token
+    pool = await asyncpg.create_pool(dsn=database, min_size=1, max_size=5, command_timeout=30)
+    app.state.pool = pool
+    try:
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS users (user_id BIGINT PRIMARY KEY, username TEXT);
+                    CREATE TABLE IF NOT EXISTS records (
+                        user_id BIGINT REFERENCES users(user_id) ON DELETE CASCADE,
+                        exercise TEXT, sets INT, reps TEXT, weight TEXT,
+                        date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                    ALTER TABLE records ADD COLUMN IF NOT EXISTS weight TEXT;
+                    CREATE INDEX IF NOT EXISTS records_user_date_idx ON records(user_id, date DESC);
+                    CREATE TABLE IF NOT EXISTS miniapp_submissions (
+                        user_id BIGINT REFERENCES users(user_id) ON DELETE CASCADE,
+                        request_id UUID NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY(user_id, request_id)
+                    );
+                """)
+        yield
+    finally:
         await pool.close()
 
 
+app = FastAPI(title="Gym Bot Mini App", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def response_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 @app.get("/health")
-async def health():
+async def health(request: Request):
+    async with request.app.state.pool.acquire() as conn:
+        await conn.fetchval("SELECT 1")
     return {"status": "ok"}
 
 
-# ===== Проверка подлинности Telegram initData =====
-# https://docs.telegram-mini-apps.com/platform/init-data
-
-def _validate_init_data(init_data: str, bot_token: str, max_age: int) -> dict:
-    if not init_data:
-        raise HTTPException(status_code=401, detail="Нет initData")
-
+async def get_current_user(request: Request, init_data: str = Header(default="", alias="X-Telegram-Init-Data")):
     try:
-        pairs = dict(parse_qsl(init_data, strict_parsing=True))
-    except ValueError:
-        raise HTTPException(status_code=401, detail="Некорректный формат initData")
-
-    received_hash = pairs.pop("hash", None)
-    if not received_hash:
-        raise HTTPException(status_code=401, detail="В initData нет hash")
-
-    data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(pairs.items()))
-    secret_key = hmac.new(b"WebAppData", bot_token.encode(), hashlib.sha256).digest()
-    computed_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
-
-    if not hmac.compare_digest(computed_hash, received_hash):
-        raise HTTPException(status_code=401, detail="Неверная подпись initData")
-
-    auth_date = int(pairs.get("auth_date", 0))
-    if max_age and (time.time() - auth_date) > max_age:
-        raise HTTPException(status_code=401, detail="initData устарела — откройте приложение заново из бота")
-
-    return pairs
-
-
-async def get_current_user(
-    x_telegram_init_data: str = Header(default="", alias="X-Telegram-Init-Data")
-) -> dict:
-    pairs = _validate_init_data(x_telegram_init_data, BOT_TOKEN, INIT_DATA_MAX_AGE)
-    user_raw = pairs.get("user")
-    if not user_raw:
-        raise HTTPException(status_code=401, detail="В initData нет данных пользователя")
-
-    user = json.loads(user_raw)
-    user_id = int(user["id"])
-    username = user.get("username") or user.get("first_name") or str(user_id)
-
-    async with pool.acquire() as conn:
+        user = validate_init_data(init_data, request.app.state.bot_token)
+    except InvalidInitData as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    username = user.get("username") or user.get("first_name") or str(user["id"])
+    async with request.app.state.pool.acquire() as conn:
         await conn.execute(
             "INSERT INTO users (user_id, username) VALUES ($1, $2) ON CONFLICT (user_id) DO NOTHING",
-            user_id, username,
+            user["id"], username,
+        )
+    return user
+
+
+async def get_rows(request, user_id, exercise=None):
+    async with request.app.state.pool.acquire() as conn:
+        return await conn.fetch(
+            """SELECT exercise, reps, weight, date FROM records
+               WHERE user_id=$1 AND ($2::text IS NULL OR exercise=$2)
+               ORDER BY date DESC""", user_id, exercise,
         )
 
-    return {"id": user_id, "username": username, "first_name": user.get("first_name", "")}
-
-
-def _to_float(value) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return 0.0
-
-
-def _fmt_number(value: float) -> str:
-    """82.0 -> '82', 82.5 -> '82.5' — чтобы в базе не плодить лишние '.0'."""
-    return str(int(value)) if float(value).is_integer() else str(value)
-
-
-# ===== API =====
 
 @app.get("/api/exercises")
-async def api_exercises(user: dict = Depends(get_current_user)):
-    async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            """
-            SELECT exercise, MAX(date) AS last_date, COUNT(*) AS sets_count
-            FROM records
-            WHERE user_id=$1 AND exercise IS NOT NULL AND exercise <> ''
-            GROUP BY exercise
-            ORDER BY last_date DESC
-            """,
-            user["id"],
-        )
-
-    return [
-        {
-            "exercise": r["exercise"],
-            "last_date": r["last_date"].isoformat() if r["last_date"] else None,
-            "sets_count": r["sets_count"],
-        }
-        for r in rows
-    ]
-
-
-@app.get("/api/exercise/{exercise}/history")
-async def api_exercise_history(exercise: str, user: dict = Depends(get_current_user)):
-    async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            """
-            SELECT reps, weight, date
-            FROM records
-            WHERE user_id=$1 AND exercise=$2
-            ORDER BY date ASC
-            """,
-            user["id"], exercise,
-        )
-
-    sessions: dict[str, dict] = defaultdict(lambda: {"reps": [], "weights": []})
-    for r in rows:
-        weight = _to_float(r["weight"])
-        reps = _to_float(r["reps"])
-        if weight <= 0 and reps <= 0:
-            continue  # запись-плейсхолдер при создании нового упражнения
-        day = r["date"].date().isoformat()
-        sessions[day]["reps"].append(reps)
-        sessions[day]["weights"].append(weight)
-
-    chart = []
-    max_weight = 0.0
-    total_volume = 0.0
-    for day in sorted(sessions.keys()):
-        data = sessions[day]
-        weights = data["weights"]
-        reps = data["reps"]
-        avg_weight = round(sum(weights) / len(weights), 1) if weights else 0
-        top_weight = max(weights) if weights else 0
-        volume = sum(rep * w for rep, w in zip(reps, weights))
-        max_weight = max(max_weight, top_weight)
-        total_volume += volume
-        chart.append(
-            {
-                "date": day,
-                "avg_weight": avg_weight,
-                "top_weight": top_weight,
-                "sets": len(weights),
-                "volume": round(volume, 1),
+async def api_exercises(request: Request, user=Depends(get_current_user)):
+    rows = await get_rows(request, user["id"])
+    counts = {}
+    for record in normalize_records(rows):
+        counts[record["exercise"]] = counts.get(record["exercise"], 0) + 1
+    exercises = {}
+    for row in rows:
+        if row["exercise"] and row["exercise"] not in exercises:
+            exercises[row["exercise"]] = {
+                "exercise": row["exercise"],
+                "last_date": local_timestamp(row["date"]).isoformat() if row["date"] else None,
+                "sets_count": counts.get(row["exercise"], 0),
             }
-        )
+    return list(exercises.values())
 
-    suggested_next = round(max_weight * 1.05 + 0.49) if max_weight else 0
 
-    return {
-        "exercise": exercise,
-        "sessions": chart[-20:],
-        "max_weight": max_weight,
-        "total_volume": round(total_volume, 1),
-        "suggested_next_weight": suggested_next,
-    }
+@app.get("/api/history")
+async def api_history(request: Request, user=Depends(get_current_user), limit: int = Query(30, ge=1, le=100)):
+    return sessions(normalize_records(await get_rows(request, user["id"])))[:limit]
+
+
+@app.get("/api/exercise/history")
+@app.get("/api/exercise/{exercise}/history")
+async def api_exercise_history(request: Request, exercise: str, user=Depends(get_current_user)):
+    workouts = sessions(normalize_records(await get_rows(request, user["id"], exercise)))
+    chart = []
+    for workout in reversed(workouts):
+        weights = [entry["weight"] for entry in workout["entries"]]
+        chart.append({"date": workout["date"], "avg_weight": round(sum(weights) / len(weights), 1),
+                      "top_weight": max(weights), "sets": workout["sets"], "volume": workout["volume"]})
+    return {"exercise": exercise, "sessions": chart[-20:],
+            "max_weight": max((point["top_weight"] for point in chart), default=0),
+            "total_volume": round(sum(point["volume"] for point in chart), 1)}
 
 
 class SetEntry(BaseModel):
-    reps: float
-    weight: float
+    model_config = ConfigDict(extra="forbid")
+    reps: int = Field(strict=True, ge=1, le=1000)
+    weight: float = Field(strict=True, ge=0, le=2000, allow_inf_nan=False)
 
 
 class AddRecordPayload(BaseModel):
-    exercise: str
-    entries: list[SetEntry]
+    model_config = ConfigDict(extra="forbid")
+    exercise: str = Field(min_length=1, max_length=120)
+    entries: list[SetEntry] = Field(min_length=1, max_length=30)
+    request_id: UUID
+
+    @field_validator("exercise")
+    @classmethod
+    def clean_exercise(cls, value):
+        value = value.strip()
+        if not value or any(ord(char) < 32 for char in value):
+            raise ValueError("Укажите название упражнения")
+        return value
 
 
 @app.post("/api/records")
-async def api_add_records(payload: AddRecordPayload, user: dict = Depends(get_current_user)):
-    exercise = payload.exercise.strip()
-    if not exercise:
-        raise HTTPException(status_code=400, detail="Название упражнения не может быть пустым")
-    if not payload.entries:
-        raise HTTPException(status_code=400, detail="Нужен хотя бы один подход")
-
-    async with pool.acquire() as conn:
+async def api_add_records(payload: AddRecordPayload, request: Request, user=Depends(get_current_user)):
+    async with request.app.state.pool.acquire() as conn:
         async with conn.transaction():
-            for entry in payload.entries:
-                await conn.execute(
-                    """
-                    INSERT INTO records (user_id, exercise, sets, reps, weight, date)
-                    VALUES ($1, $2, 1, $3, $4, NOW())
-                    """,
-                    user["id"],
-                    exercise,
-                    _fmt_number(entry.reps),
-                    _fmt_number(entry.weight),
-                )
-
-    return {"status": "ok", "added": len(payload.entries)}
+            inserted = await conn.fetchval(
+                """INSERT INTO miniapp_submissions (user_id, request_id) VALUES ($1, $2)
+                   ON CONFLICT DO NOTHING RETURNING request_id""", user["id"], payload.request_id,
+            )
+            if inserted is None:
+                return {"status": "ok", "added": 0, "duplicate": True}
+            await conn.executemany(
+                """INSERT INTO records (user_id, exercise, sets, reps, weight, date)
+                   VALUES ($1, $2, 1, $3, $4, CURRENT_TIMESTAMP AT TIME ZONE 'UTC')""",
+                [(user["id"], payload.exercise, str(entry.reps), format(entry.weight, "g"))
+                 for entry in payload.entries],
+            )
+    return {"status": "ok", "added": len(payload.entries), "duplicate": False}
 
 
 @app.get("/api/summary")
-async def api_summary(user: dict = Depends(get_current_user)):
-    async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            """
-            SELECT exercise, reps, weight, date
-            FROM records
-            WHERE user_id=$1
-            ORDER BY date DESC
-            """,
-            user["id"],
-        )
-
-    if not rows:
-        return {"total_sessions": 0, "week_sessions": 0, "last_workout": None, "top_exercises": []}
-
-    sessions_by_day: dict[str, list] = defaultdict(list)
-    volume_by_exercise: dict[str, float] = defaultdict(float)
-    for r in rows:
-        day = r["date"].date().isoformat()
-        sessions_by_day[day].append(r)
-        volume_by_exercise[r["exercise"]] += _to_float(r["reps"]) * _to_float(r["weight"])
-
-    week_ago = date.today() - timedelta(days=7)
-    week_sessions = sum(1 for day in sessions_by_day if date.fromisoformat(day) >= week_ago)
-
-    top_exercises = sorted(volume_by_exercise.items(), key=lambda kv: kv[1], reverse=True)[:5]
-
+async def api_summary(request: Request, user=Depends(get_current_user)):
+    records = normalize_records(await get_rows(request, user["id"]))
+    workouts = sessions(records)
+    current_day = today().isoformat()
+    week_start = (today() - timedelta(days=6)).isoformat()
+    volume = {}
+    for entry in records:
+        volume[entry["exercise"]] = volume.get(entry["exercise"], 0) + entry["reps"] * entry["weight"]
+    today_workout = next((workout for workout in workouts if workout["date"] == current_day), None)
     return {
-        "total_sessions": len(sessions_by_day),
-        "week_sessions": week_sessions,
-        "last_workout": rows[0]["date"].isoformat(),
-        "top_exercises": [{"exercise": ex, "volume": round(vol, 1)} for ex, vol in top_exercises],
+        "user": {"first_name": user.get("first_name", ""), "username": user.get("username", "")},
+        "total_sessions": len(workouts),
+        "week_sessions": sum(week_start <= workout["date"] <= current_day for workout in workouts),
+        "last_workout": records[0]["date"] if records else None,
+        "today": today_workout,
+        "top_exercises": [{"exercise": exercise, "volume": round(total, 1)}
+                          for exercise, total in sorted(volume.items(), key=lambda item: item[1], reverse=True)[:5]],
     }
 
 
-# Отдаём статику (index.html и т.д.) для всего, что не /api/*
-_static_dir = os.path.join(os.path.dirname(__file__), "static")
-app.mount("/", StaticFiles(directory=_static_dir, html=True), name="static")
+app.mount("/", StaticFiles(directory=ROOT / "static", html=True), name="static")
