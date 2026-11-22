@@ -1,5 +1,6 @@
 import os
 import asyncio
+from contextlib import suppress
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart
 from aiogram.filters import Command
@@ -1237,8 +1238,16 @@ async def main():
         await bot.set_chat_menu_button(menu_button=MenuButtonWebApp(
             text="Тренировки", web_app=WebAppInfo(url=WEBAPP_URL)
         ))
-    asyncio.create_task(reminder_scheduler(bot))  # <-- передаём bot сюда
-    await dp.start_polling(bot)
+    reminders_task = asyncio.create_task(reminder_scheduler(bot))
+    try:
+        await dp.start_polling(bot)
+    finally:
+        reminders_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await reminders_task
+        await bot.session.close()
+        if db_pool is not None:
+            await db_pool.close()
 
 
 

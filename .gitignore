@@ -7,3 +7,4 @@ __pycache__/
 .venv/
 .review/
 node_modules/
+gym-railway-ready.zip
