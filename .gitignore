@@ -8,3 +8,5 @@ __pycache__/
 .review/
 node_modules/
 gym-railway-ready.zip
+gym-railway-ready/
+gym-app-ready.zip
